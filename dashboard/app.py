@@ -48,7 +48,7 @@ except ImportError:
     verification_pipeline = None
     logger.info("VerificationPipeline not available, using simple verifier")
 
-from dashboard.auth import init_auth, require_auth, AuthConfig, LoginRequest, LoginResponse, get_auth_manager
+from dashboard.auth import init_auth, require_auth, require_auth_with_tenant, AuthConfig, LoginRequest, LoginResponse, get_auth_manager
 
 app = FastAPI(title="RTA-GUARD Dashboard", version="0.1.0")
 
@@ -58,6 +58,11 @@ auth_config = AuthConfig(
     api_token=os.getenv("DASHBOARD_TOKEN")
 )
 auth = init_auth(auth_config)
+
+# Initialize Tenant Manager (Phase 4.1)
+from brahmanda.tenancy import TenantManager, get_tenant_manager, validate_tenant_id
+data_dir = os.getenv("RTA_DATA_DIR", "data")
+tenant_manager = get_tenant_manager(base_data_dir=data_dir)
 
 # Initialize RTA engine with verification pipeline (Phase 2.3)
 rta_engine = RtaEngine(GuardConfig(log_all=True), verifier=brahmanda_verifier, pipeline=verification_pipeline)
@@ -233,6 +238,81 @@ async def brahmanda_status():
 
 
 # --- Auth endpoints ---
+
+# --- Tenant Management endpoints (Phase 4.1) ---
+
+class TenantCreateInput(BaseModel):
+    """Input for creating a tenant."""
+    tenant_id: str
+    name: str = ""
+    config: Optional[dict] = None
+
+
+@app.post("/api/tenants")
+async def create_tenant(data: TenantCreateInput, auth: bool = Depends(require_auth)):
+    """Create a new tenant with isolated databases."""
+    try:
+        ctx = tenant_manager.create_tenant(
+            tenant_id=data.tenant_id,
+            name=data.name or data.tenant_id,
+            config=data.config or {},
+        )
+        return {"status": "created", "tenant": ctx.to_dict()}
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/tenants")
+async def list_tenants(auth: bool = Depends(require_auth)):
+    """List all tenants."""
+    return {
+        "tenants": tenant_manager.list_tenants(),
+        "total": len(tenant_manager.list_tenants()),
+    }
+
+
+@app.get("/api/tenants/{tenant_id}")
+async def get_tenant(tenant_id: str, auth: bool = Depends(require_auth)):
+    """Get tenant details."""
+    try:
+        ctx = tenant_manager.get_tenant(tenant_id)
+        return ctx.to_dict()
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/api/tenants/{tenant_id}")
+async def delete_tenant(tenant_id: str, auth: bool = Depends(require_auth)):
+    """Delete a tenant and all its data."""
+    try:
+        tenant_manager.delete_tenant(tenant_id)
+        return {"status": "deleted", "tenant_id": tenant_id}
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/tenants/{tenant_id}/health")
+async def tenant_health(tenant_id: str, auth: bool = Depends(require_auth)):
+    """Get health status of a tenant's isolated databases."""
+    try:
+        ctx = tenant_manager.get_tenant(tenant_id)
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=str(e))
+
+    health = {"tenant_id": tenant_id, "databases": {}}
+    for module in ("conscience", "attribution", "user_monitor", "temporal"):
+        db_path = ctx.get_db_path(module)
+        health["databases"][module] = {
+            "path": db_path,
+            "exists": os.path.exists(db_path),
+            "size_bytes": os.path.getsize(db_path) if os.path.exists(db_path) else 0,
+        }
+    return health
+
 
 # --- Conscience Monitor endpoints (Phase 3.1) ---
 
@@ -577,9 +657,16 @@ async def login(req: LoginRequest):
     auth_mgr = get_auth_manager()
     if auth_mgr.verify_token(req.token):
         session_id = auth_mgr.create_session()
+        # Try to extract tenant_id from JWT payload
+        tenant_id = None
+        from dashboard.auth import _decode_jwt_payload, _extract_tenant_from_payload
+        payload = _decode_jwt_payload(req.token)
+        if payload:
+            tenant_id = _extract_tenant_from_payload(payload)
         return LoginResponse(
             session_id=session_id,
-            expires_in=auth_mgr.config.session_ttl
+            expires_in=auth_mgr.config.session_ttl,
+            tenant_id=tenant_id,
         )
     from fastapi import HTTPException
     raise HTTPException(status_code=401, detail="Invalid token")

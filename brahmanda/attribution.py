@@ -7,6 +7,7 @@ AuditTrail: append-only log of all fact modifications with hash-chain integrity
 
 EU AI Act compliance: full audit trail, source attribution, confidence scoring.
 """
+import os
 import sqlite3
 import json
 import logging
@@ -461,10 +462,16 @@ class AttributionManager:
         history = attr.get_audit_history("f-001")
     """
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, tenant_context: Optional[Any] = None):
+        if tenant_context is not None:
+            db_path = tenant_context.attribution_db_path
+            db_dir = os.path.dirname(db_path)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir, exist_ok=True)
         self.registry = SourceRegistry(db_path=db_path)
         self.tracker = FactProvenanceTracker()
         self.audit = AuditTrail(db_path=db_path)
+        self._tenant_context = tenant_context
 
     def register_source(self, name: str, authority: SourceAuthority = SourceAuthority.TERTIARY, **kwargs) -> Source:
         """Register a source and audit the registration."""

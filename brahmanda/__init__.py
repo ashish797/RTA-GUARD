@@ -84,6 +84,16 @@ try:
 except ImportError:
     _ESCALATION_AVAILABLE = False
 
+# Multi-tenant isolation (Phase 4.1)
+try:
+    from .tenancy import (
+        TenantContext, TenantManager, get_tenant_manager,
+        validate_tenant_id, get_legacy_context, reset_tenant_manager,
+    )
+    _TENANCY_AVAILABLE = True
+except ImportError:
+    _TENANCY_AVAILABLE = False
+
 # Qdrant vector backend (optional — requires qdrant-client + openai)
 try:
     from .qdrant_client import QdrantBrahmanda, create_qdrant_seed_map, get_qdrant_verifier
@@ -200,4 +210,15 @@ if _ESCALATION_AVAILABLE:
         "EscalationDecision",
         "EscalationConfig",
         "get_escalation_chain",
+    ])
+
+if _TENANCY_AVAILABLE:
+    __all__.extend([
+        # Phase 4.1
+        "TenantContext",
+        "TenantManager",
+        "get_tenant_manager",
+        "validate_tenant_id",
+        "get_legacy_context",
+        "reset_tenant_manager",
     ])

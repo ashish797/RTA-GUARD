@@ -420,19 +420,29 @@ class ConscienceMonitor:
     """
 
     def __init__(self, db_path: Optional[str] = None, in_memory: bool = False,
-                 drift_window: int = 20, drift_ema_alpha: float = 0.3):
+                 drift_window: int = 20, drift_ema_alpha: float = 0.3,
+                 tenant_context: Optional[Any] = None):
         """
         Args:
             db_path: Path to SQLite database file. Default: data/conscience.db
             in_memory: If True, use in-memory SQLite (for testing).
+            tenant_context: TenantContext for multi-tenant isolation.
+                           If provided, db_path is derived from tenant_context.conscience_db_path.
         """
         if in_memory:
             self._db_path = ":memory:"
+        elif tenant_context is not None:
+            # Multi-tenant mode: use tenant-isolated database
+            self._db_path = tenant_context.conscience_db_path
+            db_dir = os.path.dirname(self._db_path)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir, exist_ok=True)
         else:
             self._db_path = db_path or os.path.join("data", "conscience.db")
             db_dir = os.path.dirname(self._db_path)
             if db_dir and not os.path.exists(db_dir):
                 os.makedirs(db_dir, exist_ok=True)
+        self._tenant_context = tenant_context
 
         # For in-memory SQLite, keep a persistent connection so schema survives
         self._mem_conn = None
@@ -1068,6 +1078,7 @@ class ConscienceMonitor:
 # ── Convenience ───────────────────────────────────────────────────
 
 
-def get_monitor(in_memory: bool = False, db_path: Optional[str] = None) -> ConscienceMonitor:
+def get_monitor(in_memory: bool = False, db_path: Optional[str] = None,
+                tenant_context: Optional[Any] = None) -> ConscienceMonitor:
     """Get a configured ConscienceMonitor instance."""
-    return ConscienceMonitor(db_path=db_path, in_memory=in_memory)
+    return ConscienceMonitor(db_path=db_path, in_memory=in_memory, tenant_context=tenant_context)

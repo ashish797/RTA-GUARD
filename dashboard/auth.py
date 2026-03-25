@@ -1,11 +1,13 @@
 """
 RTA-GUARD Dashboard — Authentication
 
-Simple token-based auth for the dashboard API.
+Token-based auth for the dashboard API with multi-tenant support.
 """
 import os
 import secrets
 import hashlib
+import base64
+import json
 from typing import Optional
 from functools import wraps
 
@@ -120,6 +122,85 @@ async def require_auth(authorization: Optional[str] = Header(None)) -> bool:
     return True
 
 
+def _extract_tenant_from_payload(payload: dict) -> Optional[str]:
+    """Extract tenant_id from JWT payload dict."""
+    # Standard claim names for tenant
+    for key in ("tenant_id", "tid", "org_id", "organization_id", "tenant"):
+        val = payload.get(key)
+        if val and isinstance(val, str):
+            return val
+    return None
+
+
+def _decode_jwt_payload(token: str) -> Optional[dict]:
+    """
+    Decode JWT payload (without signature verification).
+
+    For production, add proper signature verification with a shared secret
+    or public key. This is a lightweight extraction for tenant context.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        # Add padding if needed
+        payload_b64 = parts[1]
+        padding = 4 - len(payload_b64) % 4
+        if padding != 4:
+            payload_b64 += "=" * padding
+        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        return json.loads(payload_bytes)
+    except Exception:
+        return None
+
+
+async def require_auth_with_tenant(
+    authorization: Optional[str] = Header(None),
+    x_tenant_id: Optional[str] = Header(None),
+) -> dict:
+    """
+    FastAPI dependency for auth with tenant extraction.
+
+    Extracts tenant_id from:
+    1. X-Tenant-Id header (highest priority)
+    2. JWT payload (tenant_id, tid, org_id claim)
+    3. None (single-tenant/legacy mode)
+
+    Returns dict with {"authenticated": True, "tenant_id": Optional[str]}
+    """
+    auth = get_auth_manager()
+
+    if not auth.config.enabled:
+        # Auth disabled — use X-Tenant-Id header if present
+        return {"authenticated": True, "tenant_id": x_tenant_id}
+
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing Authorization header. Use: Authorization: Bearer <token>"
+        )
+
+    # Support both "Bearer <token>" and raw token
+    token = authorization
+    if authorization.startswith("Bearer "):
+        token = authorization[7:]
+
+    if not auth.verify_token(token):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Extract tenant_id: explicit header takes priority
+    tenant_id = x_tenant_id
+
+    # If no explicit header, try to extract from JWT payload
+    if not tenant_id and authorization.startswith("Bearer "):
+        jwt_token = authorization[7:]
+        payload = _decode_jwt_payload(jwt_token)
+        if payload:
+            tenant_id = _extract_tenant_from_payload(payload)
+
+    return {"authenticated": True, "tenant_id": tenant_id}
+
+
 class LoginRequest(BaseModel):
     token: str
 
@@ -127,3 +208,4 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     session_id: str
     expires_in: int
+    tenant_id: Optional[str] = None
