@@ -39,6 +39,13 @@ from .temporal import (
     ContradictionPair,
 )
 
+from .escalation import (
+    EscalationChain,
+    EscalationLevel,
+    EscalationDecision,
+    EscalationConfig,
+)
+
 logger = logging.getLogger(__name__)
 
 # ─── Database helpers ──────────────────────────────────────────────
@@ -445,6 +452,9 @@ class ConscienceMonitor:
 
         # Temporal consistency checker (Phase 3.4)
         self.temporal_checker = TemporalConsistencyChecker()
+
+        # Escalation chain (Phase 3.6)
+        self.escalation_chain = EscalationChain()
 
         self._init_db()
 
@@ -951,6 +961,57 @@ class ConscienceMonitor:
             "contradictions": self.temporal_checker.get_contradiction_history(agent_id),
             "total": self.temporal_checker.get_contradiction_count(agent_id),
         }
+
+    # ── Escalation (Phase 3.6) ──────────────────────────────────
+
+    def evaluate_escalation(
+        self,
+        agent_id: str,
+        session_id: str = "",
+        user_risk_score: float = 0.0,
+    ) -> Dict[str, Any]:
+        """
+        Unified escalation evaluation combining all signals from Phase 3.
+
+        Aggregates drift, Tamas, temporal consistency, user risk, and
+        violation rate into a single EscalationDecision.
+
+        Args:
+            agent_id: The agent to evaluate.
+            session_id: The current session (optional).
+            user_risk_score: User behavior risk score (0.0-1.0).
+
+        Returns:
+            Dict with escalation decision details.
+        """
+        # Gather signals from all subsystems
+        agent = self._load_agent(agent_id)
+        drift_score = 0.0
+        violation_rate = 0.0
+        if agent:
+            drift_score = agent.live_drift_score or agent.drift_score
+            violation_rate = agent.violation_rate
+
+        tamas_state = self.tamas_detector.get_current_state(agent_id).value
+        consistency_level = self.temporal_checker.get_consistency_level(agent_id).value
+
+        signals = EscalationChain.build_signals(
+            drift_score=drift_score,
+            tamas_state=tamas_state,
+            consistency_level=consistency_level,
+            user_risk_score=user_risk_score,
+            violation_rate=violation_rate,
+        )
+
+        decision = self.escalation_chain.evaluate(
+            signals, session_id=session_id, agent_id=agent_id
+        )
+
+        # Execute handlers if escalated
+        if decision.level > EscalationLevel.OBSERVE:
+            self.escalation_chain.execute(decision)
+
+        return decision.to_dict()
 
     # ── Listing ───────────────────────────────────────────────────
 

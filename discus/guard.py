@@ -45,16 +45,18 @@ class DiscusGuard:
     """
 
     def __init__(self, config: Optional[GuardConfig] = None, rta_engine: Optional[RtaEngine] = None,
-                 user_tracker: Optional[Any] = None):
+                 user_tracker: Optional[Any] = None, escalation_chain: Optional[Any] = None):
         self.config = config or GuardConfig()
         self.rule_engine = RuleEngine(self.config)
         self.rta_engine = rta_engine  # RTA constitutional engine (optional)
         self.user_tracker = user_tracker  # UserBehaviorTracker (optional, Phase 3.5)
+        self.escalation_chain = escalation_chain  # EscalationChain (optional, Phase 3.6)
         self._event_log: list[SessionEvent] = []
         self._on_kill_callbacks: list[Callable] = []
         self._killed_sessions: set[str] = set()
         logger.info("DiscusGuard initialized" + (" with RTA" if rta_engine else "")
-                     + (" with user tracking" if user_tracker else ""))
+                     + (" with user tracking" if user_tracker else "")
+                     + (" with escalation" if escalation_chain else ""))
 
     def on_kill(self, callback: Callable[[SessionEvent], None]):
         """Register a callback for when a session is killed."""
@@ -206,6 +208,61 @@ class DiscusGuard:
                 self._fire_on_kill(event)
                 logger.warning(f"🛑 SESSION KILLED (adversarial user) [{session_id}]: {details}")
                 raise SessionKilledError(event)
+
+        # Phase 3.6: Escalation protocol evaluation
+        if self.escalation_chain:
+            try:
+                from brahmanda.escalation import EscalationChain, EscalationLevel
+                signals = {
+                    "drift_score": 0.0,
+                    "tamas_state": "sattva",
+                    "consistency_level": "highly_consistent",
+                    "user_risk_score": 0.0,
+                    "violation_rate": 0.0,
+                }
+                # Get user risk from tracker if available
+                if self.user_tracker and user_id:
+                    signals["user_risk_score"] = self.user_tracker.get_user_risk_score(user_id)
+                # Get violation rate from event log
+                session_events = [e for e in self._event_log if e.session_id == session_id]
+                if session_events:
+                    violations = [e for e in session_events if e.decision.value in ("kill", "warn")]
+                    signals["violation_rate"] = len(violations) / len(session_events)
+                decision = self.escalation_chain.evaluate(signals, session_id=session_id)
+                if decision.level == EscalationLevel.KILL:
+                    details = f"Escalation KILL: {'; '.join(decision.reasons)}"
+                    event = SessionEvent(
+                        session_id=session_id,
+                        input_text=text[:200],
+                        violation_type=ViolationType.CUSTOM,
+                        severity=Severity.CRITICAL,
+                        decision=KillDecision.KILL,
+                        details=details,
+                    )
+                    self._log_event(event)
+                    self._killed_sessions.add(session_id)
+                    self._fire_on_kill(event)
+                    logger.warning(f"🛑 SESSION KILLED (escalation) [{session_id}]: {details}")
+                    raise SessionKilledError(event)
+                elif decision.level >= EscalationLevel.ALERT:
+                    details = f"Escalation ALERT: {'; '.join(decision.reasons)}"
+                    event = SessionEvent(
+                        session_id=session_id,
+                        input_text=text[:200],
+                        violation_type=ViolationType.CUSTOM,
+                        severity=Severity.HIGH,
+                        decision=KillDecision.KILL,
+                        details=details,
+                    )
+                    self._log_event(event)
+                    self._killed_sessions.add(session_id)
+                    self._fire_on_kill(event)
+                    logger.warning(f"🛑 SESSION KILLED (escalation alert) [{session_id}]: {details}")
+                    raise SessionKilledError(event)
+            except SessionKilledError:
+                raise
+            except Exception as e:
+                logger.debug(f"Escalation evaluation error: {e}")
 
         # No violations — pass
         event = SessionEvent(

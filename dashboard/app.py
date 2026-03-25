@@ -82,8 +82,22 @@ except Exception as e:
     user_tracker = None
     logger.warning(f"User Behavior Tracker init failed: {e}")
 
+# Initialize Escalation Chain (Phase 3.6)
+try:
+    from brahmanda.escalation import EscalationChain, EscalationConfig
+    escalation_chain = EscalationChain()
+    logger.info("Escalation Chain initialized (Phase 3.6)")
+except Exception as e:
+    escalation_chain = None
+    logger.warning(f"Escalation Chain init failed: {e}")
+
+# Wire escalation chain into ConscienceMonitor
+if conscience_monitor and escalation_chain:
+    conscience_monitor.escalation_chain = escalation_chain
+
 # Global guard instance for the dashboard — WITH RTA enabled
-guard = DiscusGuard(GuardConfig(log_all=True), rta_engine=rta_engine, user_tracker=user_tracker)
+guard = DiscusGuard(GuardConfig(log_all=True), rta_engine=rta_engine, user_tracker=user_tracker,
+                    escalation_chain=escalation_chain)
 
 # Connected websocket clients
 connected_clients: list[WebSocket] = []
@@ -490,6 +504,71 @@ async def conscience_user_list(auth: bool = Depends(require_auth)):
         "users": users,
         "total": len(users),
     }
+
+
+# --- Escalation Protocol endpoints (Phase 3.6) ---
+
+class EscalationSignalsInput(BaseModel):
+    """Input for manual escalation evaluation."""
+    drift_score: float = 0.0
+    tamas_state: str = "sattva"
+    consistency_level: str = "highly_consistent"
+    user_risk_score: float = 0.0
+    violation_rate: float = 0.0
+    session_id: str = ""
+    agent_id: str = ""
+
+
+@app.post("/api/conscience/escalation/evaluate")
+async def escalation_evaluate(data: EscalationSignalsInput, auth: bool = Depends(require_auth)):
+    """Evaluate escalation from provided signals."""
+    if not escalation_chain:
+        return {"error": "Escalation Chain not available"}
+    from brahmanda.escalation import EscalationChain as EC
+    signals = EC.build_signals(
+        drift_score=data.drift_score,
+        tamas_state=data.tamas_state,
+        consistency_level=data.consistency_level,
+        user_risk_score=data.user_risk_score,
+        violation_rate=data.violation_rate,
+    )
+    decision = escalation_chain.evaluate(
+        signals, session_id=data.session_id, agent_id=data.agent_id
+    )
+    return decision.to_dict()
+
+
+@app.get("/api/conscience/escalation/{agent_id}")
+async def escalation_agent(agent_id: str, session_id: str = "", auth: bool = Depends(require_auth)):
+    """Get escalation decision for an agent using all available signals."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    user_risk = 0.0
+    if user_tracker and session_id:
+        # Try to find user risk from session events
+        pass
+    return conscience_monitor.evaluate_escalation(
+        agent_id, session_id=session_id, user_risk_score=user_risk
+    )
+
+
+@app.get("/api/conscience/escalation/history")
+async def escalation_history(limit: int = 50, auth: bool = Depends(require_auth)):
+    """Get recent escalation decisions."""
+    if not escalation_chain:
+        return {"error": "Escalation Chain not available", "decisions": []}
+    return {
+        "decisions": escalation_chain.get_decision_history(limit=limit),
+        "total": len(escalation_chain.get_decision_history(limit=limit)),
+    }
+
+
+@app.get("/api/conscience/escalation/config")
+async def escalation_config(auth: bool = Depends(require_auth)):
+    """Get current escalation configuration."""
+    if not escalation_chain:
+        return {"error": "Escalation Chain not available"}
+    return escalation_chain.config.to_dict()
 
 
 @app.post("/api/login")

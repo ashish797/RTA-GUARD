@@ -101,6 +101,36 @@ This document maps all files to their respective development phases. It serves a
 | `brahmanda/test_drift.py` | 54 tests: session/agent drift, trend, components, thresholds, window, EMA, integration |
 | `dashboard/app.py` | `/api/conscience/drift/{agent_id}`, drift session \& components endpoints, drift recording |
 
+### Subphase 3.3 — Tamas Detection Protocol
+| File | Description |
+|---|---|
+| `brahmanda/tamas.py` | TamasDetector with 4-state model (SATTVA/RAJAS/TAMAS/CRITICAL), hysteresis, TamasStore (SQLite) |
+| `brahmanda/test_tamas.py` | 51 tests covering state transitions, hysteresis, scope creep, recovery |
+
+### Subphase 3.4 — Temporal Consistency Enforcement
+| File | Description |
+|---|---|
+| `brahmanda/temporal.py` | TemporalConsistencyChecker with sliding window, contradiction detection, 4 consistency levels |
+| `brahmanda/test_temporal.py` | 35 tests for storage, contradictions, scoring, sliding window, pruning |
+
+### Subphase 3.5 — User Behavior Anomaly Detection
+| File | Description |
+|---|---|
+| `brahmanda/user_monitor.py` | UserBehaviorTracker, 6 detection categories, risk scoring, adversarial detection |
+| `brahmanda/test_user_monitor.py` | 57 tests for user behavior anomaly detection |
+| `dashboard/app.py` | 4 user risk endpoints (/api/conscience/users/*) |
+| `discus/guard.py` | DiscusGuard integration: user_tracker param, adversarial session kill |
+
+### Subphase 3.6 — Escalation Protocols
+| File | Description |
+|---|---|
+| `brahmanda/escalation.py` | EscalationChain, EscalationLevel (OBSERVE→KILL), EscalationDecision, EscalationConfig, weighted signal aggregation, handler callbacks |
+| `brahmanda/test_escalation.py` | 54 tests: levels, decisions, single/multi signal, handlers, history, edge cases, integration |
+| `brahmanda/conscience.py` | ConscienceMonitor.evaluate_escalation() — unified signal aggregation |
+| `discus/guard.py` | Escalation chain integration in check(): pre-flight escalation evaluation |
+| `dashboard/app.py` | 4 escalation endpoints (evaluate, agent, history, config) |
+| `brahmanda/__init__.py` | Exports: EscalationChain, EscalationLevel, EscalationDecision, EscalationConfig |
+
 ---
 
 ## Phase 4 — Enterprise Features
@@ -163,4 +193,4 @@ This document maps all files to their respective development phases. It serves a
 
 ---
 
-*Last updated: 2026-03-26 (Phase 3.2 complete)*
+*Last updated: 2026-03-26 (Phase 3.6 complete — Phase 3 DONE)*

@@ -74,6 +74,16 @@ try:
 except ImportError:
     _USER_MONITOR_AVAILABLE = False
 
+# Escalation protocols (Phase 3.6)
+try:
+    from .escalation import (
+        EscalationChain, EscalationLevel, EscalationDecision,
+        EscalationConfig, get_escalation_chain,
+    )
+    _ESCALATION_AVAILABLE = True
+except ImportError:
+    _ESCALATION_AVAILABLE = False
+
 # Qdrant vector backend (optional — requires qdrant-client + openai)
 try:
     from .qdrant_client import QdrantBrahmanda, create_qdrant_seed_map, get_qdrant_verifier
@@ -180,4 +190,14 @@ if _USER_MONITOR_AVAILABLE:
         "AnomalyCategory",
         "RiskLevel",
         "get_tracker",
+    ])
+
+if _ESCALATION_AVAILABLE:
+    __all__.extend([
+        # Phase 3.6
+        "EscalationChain",
+        "EscalationLevel",
+        "EscalationDecision",
+        "EscalationConfig",
+        "get_escalation_chain",
     ])
