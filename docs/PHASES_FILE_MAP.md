@@ -139,8 +139,11 @@ This document maps all files to their respective development phases. It serves a
 
 | File/Directory | Description |
 |---|---|
-| `dashboard/auth.py` | Auth (token-based, will expand to SSO) |
+| `dashboard/auth.py` | Auth (token-based, will expand to SSO). Phase 4.2: `require_permission()` decorator with RBAC checks |
 | `dashboard/reports.py` | Compliance report generation (EU AI Act) |
+| `brahmanda/tenancy.py` | Multi-tenant isolation (Phase 4.1): TenantContext, TenantManager, per-tenant SQLite DBs |
+| `brahmanda/rbac.py` | RBAC system (Phase 4.2): Role enum (ADMIN/OPERATOR/VIEWER/AUDITOR), Permission enum (9 permissions), RBACManager with tenant-scoped assignments, SQLite persistence |
+| `brahmanda/test_rbac.py` | RBAC tests: role mapping, assignment/revocation, multi-tenant isolation, edge cases |
 | `tests/test_enterprise.py` | Phase 4 tests |
 
 ---
@@ -193,4 +196,4 @@ This document maps all files to their respective development phases. It serves a
 
 ---
 
-*Last updated: 2026-03-26 (Phase 3.6 complete — Phase 3 DONE)*
+*Last updated: 2026-03-26 (Phase 4.2 RBAC complete)*

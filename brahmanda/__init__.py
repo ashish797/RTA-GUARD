@@ -94,6 +94,17 @@ try:
 except ImportError:
     _TENANCY_AVAILABLE = False
 
+# RBAC (Phase 4.2)
+try:
+    from .rbac import (
+        Role, Permission, RBACManager, RoleAssignment,
+        get_role_permissions, get_all_permissions,
+        get_rbac_manager, reset_rbac_manager,
+    )
+    _RBAC_AVAILABLE = True
+except ImportError:
+    _RBAC_AVAILABLE = False
+
 # Qdrant vector backend (optional — requires qdrant-client + openai)
 try:
     from .qdrant_client import QdrantBrahmanda, create_qdrant_seed_map, get_qdrant_verifier
@@ -221,4 +232,17 @@ if _TENANCY_AVAILABLE:
         "validate_tenant_id",
         "get_legacy_context",
         "reset_tenant_manager",
+    ])
+
+if _RBAC_AVAILABLE:
+    __all__.extend([
+        # Phase 4.2
+        "Role",
+        "Permission",
+        "RBACManager",
+        "RoleAssignment",
+        "get_role_permissions",
+        "get_all_permissions",
+        "get_rbac_manager",
+        "reset_rbac_manager",
     ])

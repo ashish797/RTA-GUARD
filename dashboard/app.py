@@ -48,7 +48,7 @@ except ImportError:
     verification_pipeline = None
     logger.info("VerificationPipeline not available, using simple verifier")
 
-from dashboard.auth import init_auth, require_auth, require_auth_with_tenant, AuthConfig, LoginRequest, LoginResponse, get_auth_manager
+from dashboard.auth import init_auth, require_auth, require_auth_with_tenant, require_permission, AuthConfig, LoginRequest, LoginResponse, get_auth_manager
 
 app = FastAPI(title="RTA-GUARD Dashboard", version="0.1.0")
 
@@ -63,6 +63,11 @@ auth = init_auth(auth_config)
 from brahmanda.tenancy import TenantManager, get_tenant_manager, validate_tenant_id
 data_dir = os.getenv("RTA_DATA_DIR", "data")
 tenant_manager = get_tenant_manager(base_data_dir=data_dir)
+
+# Initialize RBAC Manager (Phase 4.2)
+from brahmanda.rbac import get_rbac_manager, reset_rbac_manager, Role, Permission
+rbac_manager = get_rbac_manager(db_path=os.path.join(data_dir, "rbac.db"))
+logger.info("RBAC Manager initialized (Phase 4.2)")
 
 # Initialize RTA engine with verification pipeline (Phase 2.3)
 rta_engine = RtaEngine(GuardConfig(log_all=True), verifier=brahmanda_verifier, pipeline=verification_pipeline)
@@ -312,6 +317,87 @@ async def tenant_health(tenant_id: str, auth: bool = Depends(require_auth)):
             "size_bytes": os.path.getsize(db_path) if os.path.exists(db_path) else 0,
         }
     return health
+
+
+# --- RBAC Management endpoints (Phase 4.2) ---
+
+class RoleAssignInput(BaseModel):
+    """Input for assigning a role."""
+    user_id: str
+    tenant_id: str
+    role: str  # admin, operator, viewer, auditor
+    assigned_by: str = "system"
+
+
+class RoleRevokeInput(BaseModel):
+    """Input for revoking a role."""
+    user_id: str
+    tenant_id: str
+
+
+@app.post("/api/rbac/assign")
+async def rbac_assign_role(data: RoleAssignInput, auth: bool = Depends(require_auth)):
+    """Assign a role to a user in a tenant."""
+    try:
+        role = Role(data.role)
+    except ValueError:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Invalid role: {data.role}. Valid: {[r.value for r in Role]}")
+    assignment = rbac_manager.assign_role(
+        user_id=data.user_id,
+        tenant_id=data.tenant_id,
+        role=role,
+        assigned_by=data.assigned_by,
+    )
+    return {"status": "assigned", "assignment": assignment.to_dict()}
+
+
+@app.post("/api/rbac/revoke")
+async def rbac_revoke_role(data: RoleRevokeInput, auth: bool = Depends(require_auth)):
+    """Revoke a user's role in a tenant."""
+    revoked = rbac_manager.revoke_role(data.user_id, data.tenant_id)
+    if revoked:
+        return {"status": "revoked", "user_id": data.user_id, "tenant_id": data.tenant_id}
+    return {"status": "not_found", "user_id": data.user_id, "tenant_id": data.tenant_id}
+
+
+@app.get("/api/rbac/user/{user_id}/tenant/{tenant_id}")
+async def rbac_get_user_role(user_id: str, tenant_id: str, auth: bool = Depends(require_auth)):
+    """Get a user's role and permissions in a tenant."""
+    role = rbac_manager.get_user_role(user_id, tenant_id)
+    if role is None:
+        return {"user_id": user_id, "tenant_id": tenant_id, "role": None, "permissions": []}
+    perms = rbac_manager.get_user_permissions(user_id, tenant_id)
+    return {
+        "user_id": user_id,
+        "tenant_id": tenant_id,
+        "role": role.value,
+        "permissions": [p.value for p in perms],
+    }
+
+
+@app.get("/api/rbac/tenant/{tenant_id}")
+async def rbac_list_tenant_roles(tenant_id: str, auth: bool = Depends(require_auth)):
+    """List all role assignments for a tenant."""
+    assignments = rbac_manager.list_role_assignments(tenant_id)
+    return {
+        "tenant_id": tenant_id,
+        "assignments": [a.to_dict() for a in assignments],
+        "total": len(assignments),
+    }
+
+
+@app.get("/api/rbac/roles")
+async def rbac_list_roles(auth: bool = Depends(require_auth)):
+    """List all available roles and their permissions."""
+    from brahmanda.rbac import get_role_permissions, get_all_permissions
+    return {
+        "roles": {
+            role.value: sorted([p.value for p in get_role_permissions(role)])
+            for role in Role
+        },
+        "all_permissions": sorted([p.value for p in get_all_permissions()]),
+    }
 
 
 # --- Conscience Monitor endpoints (Phase 3.1) ---

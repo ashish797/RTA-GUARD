@@ -2,13 +2,14 @@
 RTA-GUARD Dashboard — Authentication
 
 Token-based auth for the dashboard API with multi-tenant support.
+Phase 4.2: RBAC permission enforcement via require_permission decorator.
 """
 import os
 import secrets
 import hashlib
 import base64
 import json
-from typing import Optional
+from typing import Optional, Set
 from functools import wraps
 
 from fastapi import HTTPException, Depends, Header
@@ -209,3 +210,119 @@ class LoginResponse(BaseModel):
     session_id: str
     expires_in: int
     tenant_id: Optional[str] = None
+    role: Optional[str] = None
+
+
+# ─── RBAC Integration (Phase 4.2) ─────────────────────────────────
+
+
+# Lazy import to avoid circular deps — rbac module imported at call time
+def _get_rbac():
+    """Get the RBAC manager lazily."""
+    try:
+        from brahmanda.rbac import get_rbac_manager, Permission
+        return get_rbac_manager(), Permission
+    except ImportError:
+        return None, None
+
+
+def require_permission(permission_name: str):
+    """
+    FastAPI dependency factory for RBAC permission checks.
+
+    Usage:
+        @app.post("/api/rules")
+        async def create_rule(
+            data: RuleInput,
+            auth_ctx: dict = Depends(require_permission("create_rules")),
+        ):
+            ...
+
+    The dependency:
+    1. Authenticates (bearer token)
+    2. Extracts tenant_id (header or JWT)
+    3. Checks RBAC permission for user_id in tenant_id
+    4. Falls back to full access if RBAC not configured (backward compat)
+
+    Returns dict: {"authenticated": True, "tenant_id": ..., "user_id": ..., "role": ...}
+    """
+    from brahmanda.rbac import Permission as PermEnum, Role
+
+    async def _check(
+        authorization: Optional[str] = Header(None),
+        x_tenant_id: Optional[str] = Header(None),
+        x_user_id: Optional[str] = Header(None),
+    ) -> dict:
+        # Step 1: Authenticate
+        auth_mgr = get_auth_manager()
+
+        if not auth_mgr.config.enabled:
+            return {"authenticated": True, "tenant_id": x_tenant_id, "user_id": x_user_id}
+
+        if not authorization:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing Authorization header. Use: Authorization: Bearer <token>"
+            )
+
+        token = authorization
+        if authorization.startswith("Bearer "):
+            token = authorization[7:]
+
+        if not auth_mgr.verify_token(token):
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        # Step 2: Extract tenant_id
+        tenant_id = x_tenant_id
+        if not tenant_id and authorization.startswith("Bearer "):
+            jwt_token = authorization[7:]
+            payload = _decode_jwt_payload(jwt_token)
+            if payload:
+                tenant_id = _extract_tenant_from_payload(payload)
+
+        # Step 3: Extract user_id (from header or JWT)
+        user_id = x_user_id
+        if not user_id and authorization.startswith("Bearer "):
+            jwt_token = authorization[7:]
+            payload = _decode_jwt_payload(jwt_token)
+            if payload:
+                for key in ("sub", "user_id", "uid", "email"):
+                    val = payload.get(key)
+                    if val and isinstance(val, str):
+                        user_id = val
+                        break
+
+        # Step 4: RBAC check (backward compatible — if RBAC not configured, allow)
+        rbac_mgr, _ = _get_rbac()
+        if rbac_mgr is not None and tenant_id is not None and user_id is not None:
+            # Find the permission enum value
+            perm = None
+            try:
+                perm = PermEnum(permission_name)
+            except ValueError:
+                raise HTTPException(status_code=500, detail=f"Unknown permission: {permission_name}")
+
+            if not rbac_mgr.has_permission(user_id, tenant_id, perm):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Permission denied: {permission_name}. "
+                           f"User {user_id} lacks required permission in tenant {tenant_id}"
+                )
+
+            role = rbac_mgr.get_user_role(user_id, tenant_id)
+            return {
+                "authenticated": True,
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "role": role.value if role else None,
+            }
+
+        # Backward compat: RBAC not configured → full access
+        return {
+            "authenticated": True,
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "role": None,
+        }
+
+    return _check
