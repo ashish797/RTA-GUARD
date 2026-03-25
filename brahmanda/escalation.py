@@ -220,8 +220,9 @@ class EscalationChain:
         chain.execute(decision)
     """
 
-    def __init__(self, config: Optional[EscalationConfig] = None):
+    def __init__(self, config: Optional[EscalationConfig] = None, webhook_manager: Optional[Any] = None):
         self.config = config or EscalationConfig()
+        self.webhook_manager = webhook_manager  # WebhookManager (optional, Phase 4.4)
         self._handlers: Dict[EscalationLevel, List[Callable]] = {
             level: [] for level in EscalationLevel
         }
@@ -478,11 +479,24 @@ class EscalationChain:
         return [d.to_dict() for d in self._decision_history[-limit:]]
 
     def _record_decision(self, decision: EscalationDecision):
-        """Record a decision in history."""
+        """Record a decision in history and fire webhook if escalation is significant."""
         self._last_decision = decision
         self._decision_history.append(decision)
         if len(self._decision_history) > 500:
             self._decision_history = self._decision_history[-500:]
+
+        # Fire webhook for significant escalations (Phase 4.4)
+        if self.webhook_manager and decision.level >= EscalationLevel.ALERT:
+            try:
+                from brahmanda.webhooks import WebhookEvent, WebhookEventType
+                webhook_event = WebhookEvent(
+                    event_type=WebhookEventType.ESCALATION,
+                    payload=decision.to_dict(),
+                    tenant_id=getattr(decision, 'tenant_id', ''),
+                )
+                self.webhook_manager.fire(webhook_event)
+            except Exception as e:
+                logger.debug(f"Escalation webhook failed: {e}")
 
     # ── Convenience: Build signals from subsystem state ──────────
 

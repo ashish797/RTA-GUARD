@@ -8,7 +8,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.responses import HTMLResponse
@@ -48,7 +48,7 @@ except ImportError:
     verification_pipeline = None
     logger.info("VerificationPipeline not available, using simple verifier")
 
-from dashboard.auth import init_auth, require_auth, require_auth_with_tenant, require_permission, AuthConfig, LoginRequest, LoginResponse, get_auth_manager
+from dashboard.auth import init_auth, require_auth, require_auth_with_tenant, require_permission, AuthConfig, LoginRequest, LoginResponse, get_auth_manager, get_sso_auth, require_auth_with_sso
 
 app = FastAPI(title="RTA-GUARD Dashboard", version="0.1.0")
 
@@ -814,6 +814,164 @@ async def report_types(auth: bool = Depends(require_auth)):
     }
 
 
+# --- Webhook Notification endpoints (Phase 4.4) ---
+
+try:
+    from brahmanda.webhooks import (
+        WebhookManager, WebhookConfig, WebhookEvent, WebhookEventType,
+        get_webhook_manager, reset_webhook_manager,
+    )
+    _webhooks_available = True
+except ImportError:
+    _webhooks_available = False
+    logger.warning("Webhook module not available")
+
+# Initialize WebhookManager
+webhook_manager = None
+if _webhooks_available:
+    try:
+        webhook_manager = get_webhook_manager(
+            db_path=os.path.join(data_dir, "webhooks.db")
+        )
+        # Wire into guard
+        guard.webhook_manager = webhook_manager
+        # Wire into escalation chain
+        if escalation_chain:
+            escalation_chain.webhook_manager = webhook_manager
+        logger.info("Webhook Manager initialized (Phase 4.4)")
+    except Exception as e:
+        logger.warning(f"Webhook Manager init failed: {e}")
+
+
+class WebhookCreateInput(BaseModel):
+    """Input for creating a webhook."""
+    url: str
+    secret: str = ""
+    events: List[str] = []
+    tenant_id: str = ""
+    active: bool = True
+    description: str = ""
+
+
+class WebhookUpdateInput(BaseModel):
+    """Input for updating a webhook."""
+    url: Optional[str] = None
+    secret: Optional[str] = None
+    events: Optional[List[str]] = None
+    active: Optional[bool] = None
+    description: Optional[str] = None
+
+
+@app.post("/api/webhooks")
+async def create_webhook(data: WebhookCreateInput, auth: bool = Depends(require_auth)):
+    """Register a new webhook endpoint."""
+    if not webhook_manager:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Webhook manager not available")
+    try:
+        events = [WebhookEventType(e) for e in data.events]
+    except ValueError as e:
+        from fastapi import HTTPException
+        valid = [e.value for e in WebhookEventType]
+        raise HTTPException(status_code=400, detail=f"Invalid event type. Valid: {valid}")
+    config = WebhookConfig(
+        url=data.url,
+        secret=data.secret,
+        events=events,
+        tenant_id=data.tenant_id,
+        active=data.active,
+        description=data.description,
+    )
+    saved = webhook_manager.register(config)
+    return saved.to_dict()
+
+
+@app.get("/api/webhooks")
+async def list_webhooks(tenant_id: Optional[str] = None, auth: bool = Depends(require_auth)):
+    """List all registered webhooks."""
+    if not webhook_manager:
+        return {"error": "Webhook manager not available", "webhooks": []}
+    hooks = webhook_manager.list(tenant_id=tenant_id)
+    return {
+        "webhooks": [h.to_dict() for h in hooks],
+        "total": len(hooks),
+    }
+
+
+@app.get("/api/webhooks/{webhook_id}")
+async def get_webhook(webhook_id: str, auth: bool = Depends(require_auth)):
+    """Get a specific webhook configuration."""
+    if not webhook_manager:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Webhook manager not available")
+    config = webhook_manager.get(webhook_id)
+    if not config:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    return config.to_dict()
+
+
+@app.put("/api/webhooks/{webhook_id}")
+async def update_webhook(webhook_id: str, data: WebhookUpdateInput, auth: bool = Depends(require_auth)):
+    """Update a webhook configuration."""
+    if not webhook_manager:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Webhook manager not available")
+    kwargs = {}
+    if data.url is not None:
+        kwargs["url"] = data.url
+    if data.secret is not None:
+        kwargs["secret"] = data.secret
+    if data.events is not None:
+        try:
+            kwargs["events"] = [WebhookEventType(e) for e in data.events]
+        except ValueError:
+            from fastapi import HTTPException
+            valid = [e.value for e in WebhookEventType]
+            raise HTTPException(status_code=400, detail=f"Invalid event type. Valid: {valid}")
+    if data.active is not None:
+        kwargs["active"] = data.active
+    if data.description is not None:
+        kwargs["description"] = data.description
+    updated = webhook_manager.update(webhook_id, **kwargs)
+    if not updated:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    return updated.to_dict()
+
+
+@app.delete("/api/webhooks/{webhook_id}")
+async def delete_webhook(webhook_id: str, auth: bool = Depends(require_auth)):
+    """Deregister a webhook endpoint."""
+    if not webhook_manager:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Webhook manager not available")
+    deleted = webhook_manager.deregister(webhook_id)
+    if not deleted:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    return {"status": "deleted", "webhook_id": webhook_id}
+
+
+@app.post("/api/webhooks/{webhook_id}/test")
+async def test_webhook(webhook_id: str, auth: bool = Depends(require_auth)):
+    """Send a test event to a webhook endpoint."""
+    if not webhook_manager:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Webhook manager not available")
+    config = webhook_manager.get(webhook_id)
+    if not config:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    test_event = WebhookEvent(
+        event_type=WebhookEventType.RULE_VIOLATION,
+        payload={"test": True, "message": "This is a test webhook delivery"},
+        tenant_id=config.tenant_id,
+    )
+    webhook_manager.fire(test_event)
+    return {"status": "test_sent", "webhook_id": webhook_id, "event_id": test_event.event_id}
+
+
 @app.post("/api/login")
 async def login(req: LoginRequest):
     """Authenticate with a token. Returns a session ID."""
@@ -843,6 +1001,149 @@ async def auth_status():
         "enabled": auth_mgr.config.enabled,
         "token_set": auth_mgr._token is not None
     }
+
+
+# --- SSO endpoints (Phase 4.5) ---
+
+class SSOLoginInput(BaseModel):
+    """Input for SSO login redirect."""
+    tenant_id: str = ""
+    provider_name: str = ""
+
+
+class SSOCallbackInput(BaseModel):
+    """Input for SSO callback processing."""
+    code: str
+    state: Optional[str] = None
+    tenant_id: str = ""
+    provider_name: str = ""
+
+
+class SSOProviderCreateInput(BaseModel):
+    """Input for registering an SSO provider."""
+    provider_type: str = "oidc"  # oidc or saml
+    issuer_url: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = ""
+    scopes: list = ["openid", "profile", "email"]
+    tenant_id: str = ""
+    provider_name: str = ""
+    saml_entity_id: str = ""
+    saml_sso_url: str = ""
+    extra: Optional[dict] = None
+
+
+@app.get("/api/sso/login")
+async def sso_login(tenant_id: str = "", provider_name: str = ""):
+    """Get SSO login URL for a tenant/provider. Redirects to SSO provider."""
+    sso = get_sso_auth()
+    url = sso.get_login_url(tenant_id=tenant_id, provider_name=provider_name)
+    if url:
+        return {"login_url": url, "tenant_id": tenant_id, "provider_name": provider_name}
+    from fastapi import HTTPException
+    raise HTTPException(status_code=404, detail="No SSO provider configured for this tenant")
+
+
+@app.post("/api/sso/callback")
+async def sso_callback(data: SSOCallbackInput):
+    """Process SSO callback — exchange auth code for session."""
+    sso = get_sso_auth()
+    try:
+        result = sso.process_callback(
+            code=data.code,
+            state=data.state,
+            tenant_id=data.tenant_id,
+            provider_name=data.provider_name,
+        )
+        return result
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/sso/providers")
+async def sso_list_providers(tenant_id: str = ""):
+    """List SSO providers, optionally filtered by tenant."""
+    try:
+        from brahmanda.sso import get_sso_manager
+        manager = get_sso_manager()
+        if tenant_id:
+            providers = manager.get_providers_for_tenant(tenant_id)
+        else:
+            providers = manager.get_all_providers()
+        return {
+            "providers": [p.config.to_dict() for p in providers],
+            "total": len(providers),
+            "configured": len(providers) > 0,
+        }
+    except ImportError:
+        return {"providers": [], "total": 0, "configured": False}
+
+
+@app.post("/api/sso/providers")
+async def sso_create_provider(data: SSOProviderCreateInput, auth: bool = Depends(require_auth)):
+    """Register a new SSO provider."""
+    try:
+        from brahmanda.sso import (
+            get_sso_manager, SSOProviderType, SSOConfig,
+            create_oidc_config, create_saml_config,
+        )
+        manager = get_sso_manager()
+
+        try:
+            ptype = SSOProviderType(data.provider_type)
+        except ValueError:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid provider_type: {data.provider_type}. Valid: {[t.value for t in SSOProviderType]}"
+            )
+
+        config = SSOConfig(
+            provider_type=ptype,
+            issuer_url=data.issuer_url,
+            client_id=data.client_id,
+            client_secret=data.client_secret,
+            redirect_uri=data.redirect_uri,
+            scopes=data.scopes,
+            tenant_id=data.tenant_id,
+            provider_name=data.provider_name,
+            saml_entity_id=data.saml_entity_id,
+            saml_sso_url=data.saml_sso_url,
+            extra=data.extra or {},
+        )
+        provider = manager.register_provider(config)
+        return {"status": "registered", "provider": config.to_dict()}
+    except ImportError:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="SSO module not available")
+
+
+@app.delete("/api/sso/providers/{tenant_id}/{provider_name}")
+async def sso_delete_provider(tenant_id: str, provider_name: str, auth: bool = Depends(require_auth)):
+    """Remove an SSO provider."""
+    try:
+        from brahmanda.sso import get_sso_manager
+        manager = get_sso_manager()
+        if manager.remove_provider(tenant_id, provider_name):
+            return {"status": "removed", "tenant_id": tenant_id, "provider_name": provider_name}
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Provider not found")
+    except ImportError:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="SSO module not available")
+
+
+@app.get("/api/sso/session/{session_id}")
+async def sso_verify_session(session_id: str):
+    """Verify an SSO session."""
+    sso = get_sso_auth()
+    session = sso.verify_sso_session(session_id)
+    if session:
+        return {"valid": True, "user": session}
+    from fastapi import HTTPException
+    raise HTTPException(status_code=401, detail="Invalid or expired SSO session")
 
 
 @app.websocket("/ws")

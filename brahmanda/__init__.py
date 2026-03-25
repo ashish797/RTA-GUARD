@@ -126,12 +126,42 @@ try:
 except ImportError:
     _COMPLIANCE_AVAILABLE = False
 
+# Webhook Notifications (Phase 4.4)
+try:
+    from .webhooks import (
+        WebhookManager, WebhookConfig, WebhookEvent, WebhookEventType,
+        WebhookStore, compute_signature, verify_signature,
+        get_webhook_manager, reset_webhook_manager,
+    )
+    _WEBHOOKS_AVAILABLE = True
+except ImportError:
+    _WEBHOOKS_AVAILABLE = False
+
 # Qdrant vector backend (optional — requires qdrant-client + openai)
 try:
     from .qdrant_client import QdrantBrahmanda, create_qdrant_seed_map, get_qdrant_verifier
     _QDRANT_AVAILABLE = True
 except ImportError:
     _QDRANT_AVAILABLE = False
+
+# SSO Integration (Phase 4.5)
+try:
+    from .sso import (
+        SSOProvider,
+        SSOProviderType,
+        SSOConfig,
+        UserProfile,
+        OIDCProvider,
+        SAMLProvider,
+        SSOManager,
+        get_sso_manager,
+        reset_sso_manager,
+        create_oidc_config,
+        create_saml_config,
+    )
+    _SSO_AVAILABLE = True
+except ImportError:
+    _SSO_AVAILABLE = False
 
 __all__ = [
     # Models
@@ -284,4 +314,34 @@ if _COMPLIANCE_AVAILABLE:
         "UserRiskSection",
         "RecommendationsSection",
         "generate_report",
+    ])
+
+if _SSO_AVAILABLE:
+    __all__.extend([
+        # Phase 4.5
+        "SSOProvider",
+        "SSOProviderType",
+        "SSOConfig",
+        "UserProfile",
+        "OIDCProvider",
+        "SAMLProvider",
+        "SSOManager",
+        "get_sso_manager",
+        "reset_sso_manager",
+        "create_oidc_config",
+        "create_saml_config",
+    ])
+
+if _WEBHOOKS_AVAILABLE:
+    __all__.extend([
+        # Phase 4.4
+        "WebhookManager",
+        "WebhookConfig",
+        "WebhookEvent",
+        "WebhookEventType",
+        "WebhookStore",
+        "compute_signature",
+        "verify_signature",
+        "get_webhook_manager",
+        "reset_webhook_manager",
     ])

@@ -45,18 +45,21 @@ class DiscusGuard:
     """
 
     def __init__(self, config: Optional[GuardConfig] = None, rta_engine: Optional[RtaEngine] = None,
-                 user_tracker: Optional[Any] = None, escalation_chain: Optional[Any] = None):
+                 user_tracker: Optional[Any] = None, escalation_chain: Optional[Any] = None,
+                 webhook_manager: Optional[Any] = None):
         self.config = config or GuardConfig()
         self.rule_engine = RuleEngine(self.config)
         self.rta_engine = rta_engine  # RTA constitutional engine (optional)
         self.user_tracker = user_tracker  # UserBehaviorTracker (optional, Phase 3.5)
         self.escalation_chain = escalation_chain  # EscalationChain (optional, Phase 3.6)
+        self.webhook_manager = webhook_manager  # WebhookManager (optional, Phase 4.4)
         self._event_log: list[SessionEvent] = []
         self._on_kill_callbacks: list[Callable] = []
         self._killed_sessions: set[str] = set()
         logger.info("DiscusGuard initialized" + (" with RTA" if rta_engine else "")
                      + (" with user tracking" if user_tracker else "")
-                     + (" with escalation" if escalation_chain else ""))
+                     + (" with escalation" if escalation_chain else "")
+                     + (" with webhooks" if webhook_manager else ""))
 
     def on_kill(self, callback: Callable[[SessionEvent], None]):
         """Register a callback for when a session is killed."""
@@ -117,6 +120,7 @@ class DiscusGuard:
                 self._log_event(event)
                 self._killed_sessions.add(session_id)
                 self._fire_on_kill(event)
+                self._fire_webhook(event)
 
                 logger.warning(f"🛑 SESSION KILLED [{session_id}]: {details}")
                 raise SessionKilledError(event)
@@ -131,6 +135,7 @@ class DiscusGuard:
                     details=f"Warning: {details}"
                 )
                 self._log_event(event)
+                self._fire_webhook(event)
                 logger.info(f"⚠️ Warning [{session_id}]: {details}")
                 return GuardResponse(
                     allowed=True,
@@ -163,6 +168,7 @@ class DiscusGuard:
                     self._log_event(event)
                     self._killed_sessions.add(session_id)
                     self._fire_on_kill(event)
+                    self._fire_webhook(event)
                     logger.warning(f"🛑 SESSION KILLED (RTA) [{session_id}]: {violation.details}")
                     raise SessionKilledError(event)
             elif decision == KillDecision.WARN:
@@ -206,6 +212,7 @@ class DiscusGuard:
                 self._log_event(event)
                 self._killed_sessions.add(session_id)
                 self._fire_on_kill(event)
+                self._fire_webhook(event)
                 logger.warning(f"🛑 SESSION KILLED (adversarial user) [{session_id}]: {details}")
                 raise SessionKilledError(event)
 
@@ -242,6 +249,7 @@ class DiscusGuard:
                     self._log_event(event)
                     self._killed_sessions.add(session_id)
                     self._fire_on_kill(event)
+                    self._fire_webhook(event)
                     logger.warning(f"🛑 SESSION KILLED (escalation) [{session_id}]: {details}")
                     raise SessionKilledError(event)
                 elif decision.level >= EscalationLevel.ALERT:
@@ -257,6 +265,7 @@ class DiscusGuard:
                     self._log_event(event)
                     self._killed_sessions.add(session_id)
                     self._fire_on_kill(event)
+                    self._fire_webhook(event)
                     logger.warning(f"🛑 SESSION KILLED (escalation alert) [{session_id}]: {details}")
                     raise SessionKilledError(event)
             except SessionKilledError:
@@ -314,6 +323,7 @@ class DiscusGuard:
         self._log_event(event)
         self._killed_sessions.add(session_id)
         self._fire_on_kill(event)
+        self._fire_webhook(event)
         logger.warning(f"🛑 SESSION MANUALLY KILLED [{session_id}]: {reason}")
 
     def is_session_alive(self, session_id: str) -> bool:
@@ -360,3 +370,23 @@ class DiscusGuard:
                 )
         except Exception as e:
             logger.debug(f"Dashboard notification failed: {e}")
+
+    def _fire_webhook(self, event: SessionEvent):
+        """Fire webhook notification if webhook manager is configured (Phase 4.4)."""
+        if not self.webhook_manager:
+            return
+        try:
+            from brahmanda.webhooks import WebhookEvent, WebhookEventType
+            webhook_event_type = WebhookEventType.SESSION_KILL
+            if event.decision == KillDecision.WARN:
+                webhook_event_type = WebhookEventType.RULE_VIOLATION
+            elif event.decision == KillDecision.KILL:
+                webhook_event_type = WebhookEventType.SESSION_KILL
+
+            webhook_event = WebhookEvent(
+                event_type=webhook_event_type,
+                payload=event.model_dump(mode="json"),
+            )
+            self.webhook_manager.fire(webhook_event)
+        except Exception as e:
+            logger.debug(f"Webhook notification failed: {e}")
