@@ -42,10 +42,20 @@ try:
 except ImportError:
     _MUTATION_AVAILABLE = False
 
-# Behavioral Profiling (Phase 3.1)
+# Behavioral Profiling (Phase 3.1) + Live Drift (Phase 3.2) + Tamas (Phase 3.3)
 try:
-    from .profiles import AgentProfile, SessionProfile, UserProfile, AnomalyType
-    from .conscience import ConscienceMonitor, BehavioralBaseline, get_monitor
+    from .profiles import (
+        AgentProfile, SessionProfile, UserProfile, AnomalyType,
+        DriftLevel, DriftComponents, classify_drift,
+    )
+    from .conscience import (
+        ConscienceMonitor, BehavioralBaseline, get_monitor,
+        LiveDriftScorer, DriftSnapshot,
+    )
+    from .tamas import (
+        TamasDetector, TamasState, TamasEvent,
+        EscalationAction, TamasStore,
+    )
     _CONSCIENCE_AVAILABLE = True
 except ImportError:
     _CONSCIENCE_AVAILABLE = False
@@ -127,4 +137,16 @@ if _CONSCIENCE_AVAILABLE:
         "ConscienceMonitor",
         "BehavioralBaseline",
         "get_monitor",
+        # Phase 3.2
+        "DriftLevel",
+        "DriftComponents",
+        "classify_drift",
+        "LiveDriftScorer",
+        "DriftSnapshot",
+        # Phase 3.3
+        "TamasDetector",
+        "TamasState",
+        "TamasEvent",
+        "EscalationAction",
+        "TamasStore",
     ])

@@ -96,8 +96,10 @@ This document maps all files to their respective development phases. It serves a
 ### Subphase 3.2 — Live An-Rta Drift Scoring
 | File | Description |
 |---|---|
-| `brahmanda/conscience.py` | LiveDriftScorer — continuous drift monitoring with sliding window |
-| `brahmanda/test_drift.py` | Drift scoring tests |
+| `brahmanda/conscience.py` | LiveDriftScorer, DriftSnapshot — continuous drift monitoring with sliding window \& EMA |
+| `brahmanda/profiles.py` | DriftLevel, DriftComponents, classify_drift — drift thresholds \& component model |
+| `brahmanda/test_drift.py` | 54 tests: session/agent drift, trend, components, thresholds, window, EMA, integration |
+| `dashboard/app.py` | `/api/conscience/drift/{agent_id}`, drift session \& components endpoints, drift recording |
 
 ---
 
@@ -161,4 +163,4 @@ This document maps all files to their respective development phases. It serves a
 
 ---
 
-*Last updated: 2026-03-26 (Phase 2.6 in progress)*
+*Last updated: 2026-03-26 (Phase 3.2 complete)*

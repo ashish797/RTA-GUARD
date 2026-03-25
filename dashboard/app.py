@@ -282,6 +282,89 @@ async def conscience_users(auth: bool = Depends(require_auth)):
         "total": len(users),
     }
 
+
+# --- Live Drift endpoints (Phase 3.2) ---
+
+class DriftComponentsInput(BaseModel):
+    """Drift component scores for recording."""
+    semantic: float = 0.0
+    alignment: float = 0.0
+    scope: float = 0.0
+    confidence: float = 0.0
+    rule_proximity: float = 0.0
+
+
+class DriftRecordInput(BaseModel):
+    """Input for recording a drift measurement."""
+    agent_id: str
+    session_id: str
+    components: DriftComponentsInput
+
+
+@app.get("/api/conscience/drift/{agent_id}")
+async def conscience_drift(agent_id: str, auth: bool = Depends(require_auth)):
+    """Get live drift state for an agent."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return conscience_monitor.get_live_drift(agent_id)
+
+
+@app.get("/api/conscience/drift/session/{session_id}")
+async def conscience_drift_session(session_id: str, auth: bool = Depends(require_auth)):
+    """Get live drift state for a session."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return conscience_monitor.get_live_drift_session(session_id)
+
+
+@app.get("/api/conscience/drift/components/{agent_id}")
+async def conscience_drift_components(agent_id: str, auth: bool = Depends(require_auth)):
+    """Get drift component breakdown for an agent."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return conscience_monitor.get_drift_components(agent_id)
+
+
+@app.post("/api/conscience/drift/record")
+async def conscience_drift_record(data: DriftRecordInput, auth: bool = Depends(require_auth)):
+    """Record a drift measurement."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return conscience_monitor.record_drift(
+        agent_id=data.agent_id,
+        session_id=data.session_id,
+        components=data.components.model_dump(),
+    )
+
+
+# --- Tamas Detection endpoints (Phase 3.3) ---
+
+@app.get("/api/conscience/tamas/{agent_id}")
+async def conscience_tamas(agent_id: str, auth: bool = Depends(require_auth)):
+    """Get current Tamas state for an agent."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return conscience_monitor.get_tamas_state(agent_id)
+
+
+@app.get("/api/conscience/tamas/{agent_id}/history")
+async def conscience_tamas_history(agent_id: str, auth: bool = Depends(require_auth)):
+    """Get Tamas event history for an agent."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return {
+        "agent_id": agent_id,
+        "events": conscience_monitor.get_tamas_history(agent_id),
+    }
+
+
+@app.get("/api/conscience/tamas/{agent_id}/recovery")
+async def conscience_tamas_recovery(agent_id: str, auth: bool = Depends(require_auth)):
+    """Get recovery score for an agent."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return conscience_monitor.get_recovery_score(agent_id)
+
 @app.post("/api/login")
 async def login(req: LoginRequest):
     """Authenticate with a token. Returns a session ID."""

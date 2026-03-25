@@ -80,7 +80,7 @@ class DriftComponents:
             + 0.15 * self.confidence
             + 0.10 * self.rule_proximity
         )
-        return round(min(score, 1.0), 4)
+        return round(max(0.0, min(score, 1.0)), 4)
 
     def to_dict(self) -> dict:
         return {
@@ -289,6 +289,7 @@ class AgentProfile:
             "live_drift_level": self.live_drift_level,
             "drift_components": self.drift_components,
             "drift_trend": self.drift_trend,
+            "drift_history": self.drift_history[-50:],  # persist last 50
             "drift_history_len": len(self.drift_history),
         }
 

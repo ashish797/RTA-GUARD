@@ -23,7 +23,13 @@ from contextlib import contextmanager
 
 from .profiles import (
     AgentProfile, SessionProfile, UserProfile,
-    AnomalyType, MIN_INTERACTIONS_FOR_BASELINE,
+    AnomalyType, DriftLevel, DriftComponents,
+    classify_drift, MIN_INTERACTIONS_FOR_BASELINE,
+)
+
+from .tamas import (
+    TamasDetector, TamasState, TamasEvent, TamasStore,
+    EscalationAction,
 )
 
 logger = logging.getLogger(__name__)
@@ -118,6 +124,275 @@ class BehavioralBaseline:
         }
 
 
+# ─── Live Drift Scorer (Phase 3.2) ────────────────────────────────
+
+
+@dataclass
+class DriftSnapshot:
+    """A point-in-time drift measurement for an interaction."""
+    session_id: str = ""
+    agent_id: str = ""
+    timestamp: str = ""
+    components: DriftComponents = field(default_factory=DriftComponents)
+    weighted_score: float = 0.0
+    level: DriftLevel = DriftLevel.HEALTHY
+
+    def to_dict(self) -> dict:
+        return {
+            "session_id": self.session_id,
+            "agent_id": self.agent_id,
+            "timestamp": self.timestamp,
+            "components": self.components.to_dict(),
+            "weighted_score": self.weighted_score,
+            "level": self.level.value,
+        }
+
+
+class LiveDriftScorer:
+    """
+    Continuous, live drift scoring that updates in real-time.
+
+    Uses a sliding window of the last N interactions and exponential
+    moving average (EMA) for smooth drift tracking. Integrated with
+    ConscienceMonitor so each interaction updates drift scores.
+
+    Drift components mirror the AnRtaDriftRule (R11):
+        - D_semantic:    0.30 weight — output pattern variance
+        - D_alignment:   0.25 weight — temporal consistency
+        - D_scope:       0.20 weight — capability boundary proximity
+        - D_confidence:  0.15 weight — confidence-verifiability gap
+        - D_rule_proximity: 0.10 weight — proximity to violation thresholds
+
+    Thresholds:
+        HEALTHY:   < 0.15
+        DEGRADED:  0.15 – 0.35
+        UNHEALTHY: 0.35 – 0.60
+        CRITICAL:  > 0.60
+    """
+
+    DEFAULT_WINDOW_SIZE = 20
+    DEFAULT_EMA_ALPHA = 0.3
+
+    def __init__(
+        self,
+        window_size: int = DEFAULT_WINDOW_SIZE,
+        ema_alpha: float = DEFAULT_EMA_ALPHA,
+    ):
+        self.window_size = window_size
+        self.ema_alpha = ema_alpha
+        # Per-agent drift history: agent_id -> list of DriftSnapshot
+        self._agent_snapshots: Dict[str, List[DriftSnapshot]] = {}
+        # Per-session drift history: session_id -> list of DriftSnapshot
+        self._session_snapshots: Dict[str, List[DriftSnapshot]] = {}
+        # Per-agent EMA state
+        self._agent_ema: Dict[str, float] = {}
+        # Track which agent owns which session
+        self._session_agents: Dict[str, str] = {}
+
+    def record_drift(
+        self,
+        agent_id: str,
+        session_id: str,
+        components: DriftComponents | Dict[str, float],
+    ) -> DriftSnapshot:
+        """
+        Record a drift measurement for an interaction.
+
+        Call this after each verification to update live drift state.
+        Accepts either a DriftComponents object or a dict with component values.
+        Returns the resulting DriftSnapshot.
+        """
+        self._session_agents[session_id] = agent_id
+        timestamp = _now()
+
+        # Normalize to DriftComponents
+        if isinstance(components, dict):
+            components = DriftComponents(
+                semantic=components.get("semantic", 0.0),
+                alignment=components.get("alignment", 0.0),
+                scope=components.get("scope", 0.0),
+                confidence=components.get("confidence", 0.0),
+                rule_proximity=components.get("rule_proximity", 0.0),
+            )
+
+        weighted = components.weighted_score()
+        level = classify_drift(weighted)
+
+        snapshot = DriftSnapshot(
+            session_id=session_id,
+            agent_id=agent_id,
+            timestamp=timestamp,
+            components=components,
+            weighted_score=weighted,
+            level=level,
+        )
+
+        # Store in agent history (sliding window)
+        if agent_id not in self._agent_snapshots:
+            self._agent_snapshots[agent_id] = []
+        self._agent_snapshots[agent_id].append(snapshot)
+        if len(self._agent_snapshots[agent_id]) > self.window_size:
+            self._agent_snapshots[agent_id] = self._agent_snapshots[agent_id][-self.window_size:]
+
+        # Store in session history
+        if session_id not in self._session_snapshots:
+            self._session_snapshots[session_id] = []
+        self._session_snapshots[session_id].append(snapshot)
+
+        # Update EMA
+        prev_ema = self._agent_ema.get(agent_id, 0.0)
+        new_ema = self.ema_alpha * weighted + (1 - self.ema_alpha) * prev_ema
+        self._agent_ema[agent_id] = round(new_ema, 4)
+
+        return snapshot
+
+    def calculate_session_drift(self, session_id: str) -> Dict[str, Any]:
+        """
+        Get the real-time drift score for the current session.
+
+        Returns the latest snapshot's data plus session-level aggregates.
+        """
+        snapshots = self._session_snapshots.get(session_id, [])
+        if not snapshots:
+            return {
+                "session_id": session_id,
+                "error": "No drift data for this session",
+                "drift_score": 0.0,
+                "level": DriftLevel.HEALTHY.value,
+            }
+
+        latest = snapshots[-1]
+        agent_id = self._session_agents.get(session_id, latest.agent_id)
+
+        # Session EMA from session-local snapshots
+        session_scores = [s.weighted_score for s in snapshots]
+        session_ema = session_scores[-1]
+        if len(session_scores) > 1:
+            ema = 0.0
+            for s in session_scores:
+                ema = self.ema_alpha * s + (1 - self.ema_alpha) * ema
+            session_ema = round(ema, 4)
+
+        return {
+            "session_id": session_id,
+            "agent_id": agent_id,
+            "drift_score": latest.weighted_score,
+            "smoothed_score": session_ema,
+            "level": latest.level.value,
+            "components": latest.components.to_dict(),
+            "snapshot_count": len(snapshots),
+            "first_snapshot": snapshots[0].timestamp if snapshots else None,
+            "last_snapshot": latest.timestamp,
+        }
+
+    def calculate_agent_drift(self, agent_id: str) -> Dict[str, Any]:
+        """
+        Get accumulated drift across all sessions for an agent.
+
+        Uses EMA-smoothed score from the sliding window.
+        """
+        snapshots = self._agent_snapshots.get(agent_id, [])
+        if not snapshots:
+            return {
+                "agent_id": agent_id,
+                "error": "No drift data for this agent",
+                "drift_score": 0.0,
+                "level": DriftLevel.HEALTHY.value,
+            }
+
+        ema_score = self._agent_ema.get(agent_id, 0.0)
+        level = classify_drift(ema_score)
+
+        # Average components across window
+        avg_components = self._average_components(snapshots)
+
+        # Session breakdown
+        session_ids = list(set(s.session_id for s in snapshots))
+        session_scores = {}
+        for sid in session_ids:
+            sess_snaps = [s for s in snapshots if s.session_id == sid]
+            if sess_snaps:
+                session_scores[sid] = sess_snaps[-1].weighted_score
+
+        return {
+            "agent_id": agent_id,
+            "drift_score": ema_score,
+            "level": level.value,
+            "components": avg_components.to_dict(),
+            "snapshot_count": len(snapshots),
+            "sessions_tracked": len(session_ids),
+            "session_scores": session_scores,
+            "trend": self.get_drift_trend(agent_id),
+        }
+
+    def get_drift_trend(self, agent_id: str) -> str:
+        """
+        Determine if drift is increasing, stable, or decreasing.
+
+        Compares first half of sliding window to second half.
+        """
+        snapshots = self._agent_snapshots.get(agent_id, [])
+        if len(snapshots) < 4:
+            return "stable"
+
+        scores = [s.weighted_score for s in snapshots]
+        mid = len(scores) // 2
+        first_half_avg = sum(scores[:mid]) / mid
+        second_half_avg = sum(scores[mid:]) / (len(scores) - mid)
+
+        delta = second_half_avg - first_half_avg
+        if delta > 0.05:
+            return "increasing"
+        elif delta < -0.05:
+            return "decreasing"
+        return "stable"
+
+    def get_drift_components(self, agent_id: str) -> Dict[str, Any]:
+        """
+        Get the breakdown of the 5 drift components for an agent.
+
+        Averages across the sliding window for each component.
+        """
+        snapshots = self._agent_snapshots.get(agent_id, [])
+        if not snapshots:
+            return {
+                "agent_id": agent_id,
+                "error": "No drift data",
+                "components": DriftComponents().to_dict(),
+            }
+
+        avg = self._average_components(snapshots)
+        latest = snapshots[-1].components
+
+        return {
+            "agent_id": agent_id,
+            "latest": latest.to_dict(),
+            "window_average": avg.to_dict(),
+            "snapshot_count": len(snapshots),
+            "level": classify_drift(avg.weighted_score()).value,
+            "trend": self.get_drift_trend(agent_id),
+        }
+
+    def get_drift_level(self, agent_id: str) -> DriftLevel:
+        """Get the current drift level for an agent."""
+        ema = self._agent_ema.get(agent_id, 0.0)
+        return classify_drift(ema)
+
+    def _average_components(self, snapshots: List[DriftSnapshot]) -> DriftComponents:
+        """Average drift components across a list of snapshots."""
+        if not snapshots:
+            return DriftComponents()
+
+        n = len(snapshots)
+        return DriftComponents(
+            semantic=sum(s.components.semantic for s in snapshots) / n,
+            alignment=sum(s.components.alignment for s in snapshots) / n,
+            scope=sum(s.components.scope for s in snapshots) / n,
+            confidence=sum(s.components.confidence for s in snapshots) / n,
+            rule_proximity=sum(s.components.rule_proximity for s in snapshots) / n,
+        )
+
+
 # ─── Conscience Monitor ──────────────────────────────────────────
 
 
@@ -127,9 +402,11 @@ class ConscienceMonitor:
 
     Maintains persistent agent/session/user profiles in SQLite.
     Provides health scores, drift detection, and anomaly alerts.
+    Integrates LiveDriftScorer (Phase 3.2) for continuous drift monitoring.
     """
 
-    def __init__(self, db_path: Optional[str] = None, in_memory: bool = False):
+    def __init__(self, db_path: Optional[str] = None, in_memory: bool = False,
+                 drift_window: int = 20, drift_ema_alpha: float = 0.3):
         """
         Args:
             db_path: Path to SQLite database file. Default: data/conscience.db
@@ -150,7 +427,22 @@ class ConscienceMonitor:
             self._mem_conn.row_factory = sqlite3.Row
             self._mem_conn.executescript(SCHEMA_SQL)
 
+        # Live drift scorer (Phase 3.2)
+        self.drift_scorer = LiveDriftScorer(
+            window_size=drift_window,
+            ema_alpha=drift_ema_alpha,
+        )
+
+        # Tamas detector (Phase 3.3)
+        self.tamas_detector = TamasDetector()
+
         self._init_db()
+
+        # Tamas store (needs persistent connection)
+        if self._mem_conn:
+            self._tamas_store = TamasStore(self._mem_conn)
+        else:
+            self._tamas_store = None  # Lazy init in _conn()
 
     def _init_db(self):
         """Initialize SQLite database with schema."""
@@ -203,6 +495,7 @@ class ConscienceMonitor:
         # Remove computed fields not in AgentProfile constructor
         data.pop("health_score", None)
         data.pop("confidence_history_len", None)
+        data.pop("drift_history_len", None)  # Phase 3.2 computed field
         return AgentProfile(**data)
 
     def _save_agent(self, profile: AgentProfile):
@@ -338,6 +631,9 @@ class ConscienceMonitor:
             user.update_from_session(session)
             self._save_user(user)
 
+        # Tamas detection (Phase 3.3)
+        self._evaluate_tamas(agent_id, agent)
+
     def _extract_confidence(self, result: Any) -> float:
         """Extract confidence score from a verification result."""
         # PipelineResult or VerifyResult
@@ -459,6 +755,104 @@ class ConscienceMonitor:
             "is_degrading": confidence_delta < -0.1,
         }
 
+    # ── Live Drift (Phase 3.2) ──────────────────────────────────
+
+    def record_drift(
+        self,
+        agent_id: str,
+        session_id: str,
+        components: Dict[str, float],
+    ) -> Dict[str, Any]:
+        """
+        Record a live drift measurement for an interaction.
+
+        Args:
+            agent_id: The agent identifier.
+            session_id: The session identifier.
+            components: Dict with keys: semantic, alignment, scope, confidence, rule_proximity.
+
+        Returns the drift snapshot with score and level.
+        """
+        drift_comp = DriftComponents(
+            semantic=components.get("semantic", 0.0),
+            alignment=components.get("alignment", 0.0),
+            scope=components.get("scope", 0.0),
+            confidence=components.get("confidence", 0.0),
+            rule_proximity=components.get("rule_proximity", 0.0),
+        )
+
+        snapshot = self.drift_scorer.record_drift(agent_id, session_id, drift_comp)
+
+        # Update agent profile's live drift fields
+        agent = self._load_agent(agent_id)
+        if agent:
+            agent.live_drift_score = self.drift_scorer._agent_ema.get(agent_id, 0.0)
+            agent.live_drift_level = snapshot.level.value
+            agent.drift_components = drift_comp.to_dict()
+            agent.drift_trend = self.drift_scorer.get_drift_trend(agent_id)
+            agent.drift_history.append(snapshot.weighted_score)
+            if len(agent.drift_history) > 50:
+                agent.drift_history = agent.drift_history[-50:]
+            self._save_agent(agent)
+
+        return snapshot.to_dict()
+
+    def get_live_drift(self, agent_id: str) -> Dict[str, Any]:
+        """Get the current live drift state for an agent."""
+        return self.drift_scorer.calculate_agent_drift(agent_id)
+
+    def get_live_drift_session(self, session_id: str) -> Dict[str, Any]:
+        """Get the current live drift state for a session."""
+        return self.drift_scorer.calculate_session_drift(session_id)
+
+    def get_drift_trend(self, agent_id: str) -> str:
+        """Get drift trend: increasing, stable, or decreasing."""
+        return self.drift_scorer.get_drift_trend(agent_id)
+
+    def get_drift_components(self, agent_id: str) -> Dict[str, Any]:
+        """Get drift component breakdown for an agent."""
+        return self.drift_scorer.get_drift_components(agent_id)
+
+    # ── Tamas Detection (Phase 3.3) ──────────────────────────────
+
+    def _evaluate_tamas(self, agent_id: str, agent: AgentProfile):
+        """Evaluate Tamas state for an agent after an interaction."""
+        old_state = self.tamas_detector.get_current_state(agent_id)
+        new_state = self.tamas_detector.evaluate_agent(agent_id, agent)
+
+        # Persist events if transition occurred
+        if new_state != old_state:
+            events = self.tamas_detector._agent_events.get(agent_id, [])
+            if events:
+                latest_event = events[-1]
+                if self._tamas_store:
+                    self._tamas_store.save_event(latest_event)
+
+    def get_tamas_state(self, agent_id: str) -> Dict[str, Any]:
+        """Get current Tamas state for an agent."""
+        return self.tamas_detector.get_tamas_summary(agent_id)
+
+    def get_tamas_history(self, agent_id: str) -> List[Dict[str, Any]]:
+        """Get Tamas event history for an agent."""
+        events = self.tamas_detector.get_tamas_history(agent_id)
+        if self._tamas_store:
+            db_events = self._tamas_store.get_events(agent_id)
+            # Merge in-memory and db events (dedupe by event_id)
+            seen_ids = {e["event_id"] for e in events}
+            for e in db_events:
+                if e["event_id"] not in seen_ids:
+                    events.append(e)
+                    seen_ids.add(e["event_id"])
+        return sorted(events, key=lambda e: e["timestamp"])
+
+    def get_recovery_score(self, agent_id: str) -> Dict[str, Any]:
+        """Get recovery score for an agent."""
+        return {
+            "agent_id": agent_id,
+            "recovery_score": self.tamas_detector.get_recovery_score(agent_id),
+            "current_state": self.tamas_detector.get_current_state(agent_id).value,
+        }
+
     # ── Listing ───────────────────────────────────────────────────
 
     def list_agents(self) -> List[Dict[str, Any]]:
@@ -473,6 +867,7 @@ class ConscienceMonitor:
             data = json.loads(row["profile_json"])
             data.pop("health_score", None)
             data.pop("confidence_history_len", None)
+            data.pop("drift_history_len", None)  # Phase 3.2 computed field
             data["health_score"] = AgentProfile(**data).get_score()
             agents.append(data)
         return agents
