@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from discus import DiscusGuard, SessionKilledError, GuardConfig, Severity
+from discus import DiscusGuard, SessionKilledError, GuardConfig, Severity, RtaEngine
 from discus.llm import OpenAIProvider
 
 
@@ -27,11 +27,13 @@ def main():
         print("   export OPENAI_API_KEY=sk-...")
         sys.exit(1)
 
-    # Initialize guard
-    guard = DiscusGuard(GuardConfig(
+    # Initialize guard with RTA
+    config = GuardConfig(
         kill_threshold=Severity.HIGH,
         log_all=True
-    ))
+    )
+    rta_engine = RtaEngine(config)
+    guard = DiscusGuard(config, rta_engine=rta_engine)
 
     # Register kill callback
     def on_kill(event):

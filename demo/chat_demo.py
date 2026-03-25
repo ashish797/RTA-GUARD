@@ -11,7 +11,7 @@ from pathlib import Path
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from discus import DiscusGuard, SessionKilledError, GuardConfig, Severity
+from discus import DiscusGuard, SessionKilledError, GuardConfig, Severity, RtaEngine
 
 
 def fake_llm(user_input: str) -> str:
@@ -35,10 +35,13 @@ def main():
 
     # Initialize guard with default config
     # Kill threshold: HIGH (kills on HIGH and CRITICAL severity)
-    guard = DiscusGuard(GuardConfig(
+    config = GuardConfig(
         kill_threshold=Severity.HIGH,
         log_all=True
-    ))
+    )
+    # Initialize RTA engine (draft rules)
+    rta_engine = RtaEngine(config)
+    guard = DiscusGuard(config, rta_engine=rta_engine)
 
     # Register a callback for kills
     def on_kill(event):

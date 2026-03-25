@@ -89,6 +89,7 @@ class RtaContext:
     llm_provider: Optional[str] = None
     model: Optional[str] = None
     timestamp: datetime = None
+    metadata: dict = None  # Additional context
 
     def __post_init__(self):
         if self.previous_inputs is None:
@@ -97,6 +98,8 @@ class RtaContext:
             self.previous_outputs = []
         if self.timestamp is None:
             self.timestamp = datetime.utcnow()
+        if self.metadata is None:
+            self.metadata = {}
 
 
 # ============================================================================
@@ -494,7 +497,7 @@ class VayuRule(RtaRule):
             return RuleResult(
                 self.rule_id,
                 True,
-                KillDecision.ALERT,
+                KillDecision.WARN,
                 Severity.LOW,
                 "Abnormally short response for complex input",
                 {"output_len": len(context.output_text), "input_len": len(context.input_text)}
@@ -532,7 +535,7 @@ class IndraRule(RtaRule):
                     return RuleResult(
                         self.rule_id,
                         True,
-                        KillDecision.BLOCK,  # Just block the action, don't kill session
+                        KillDecision.KILL,  # Just block the action, don't kill session
                         self.severity,
                         f"Restricted action '{action}' without authorization",
                         {"action": action, "description": description}
@@ -590,7 +593,7 @@ class AnRtaDriftRule(RtaRule):
             return RuleResult(
                 self.rule_id,
                 True,
-                KillDecision.ALERT,
+                KillDecision.WARN,
                 Severity.MEDIUM,
                 f"Drift detected: {drift:.2f} — increased monitoring",
                 {"drift_score": drift}
@@ -726,7 +729,7 @@ class TamasRule(RtaRule):
             return RuleResult(
                 self.rule_id,
                 True,
-                KillDecision.ALERT,
+                KillDecision.WARN,
                 Severity.HIGH,
                 "Tamas: Severely degraded output quality",
                 {}
@@ -838,10 +841,9 @@ class RtaEngine:
 
         if highest_priority_violation:
             decision = highest_priority_violation.decision
-            if decision in (KillDecision.KILL, KillDecision.BLOCK):
+            if decision == KillDecision.KILL:
                 allowed = False
-                final_decision = decision
-            # WARN and ALERT don't block, just report
+            final_decision = decision  # Could be KILL or WARN
 
         return allowed, results, final_decision
 
@@ -883,7 +885,7 @@ def integrate_rta_engine(guard_instance):
 
         allowed, results, decision = engine.check(context)
 
-        if not allowed and decision in (KillDecision.KILL, KillDecision.BLOCK):
+        if not allowed and decision == KillDecision.KILL:
             # Create event and kill
             from .guard import SessionKilledError
             violation = next((r for r in results if r.is_violation), None)

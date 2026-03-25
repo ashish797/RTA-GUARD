@@ -16,6 +16,7 @@ from .models import (
     KillDecision, Severity, ViolationType
 )
 from .rules import RuleEngine
+from .rta_engine import RtaEngine, RtaContext
 
 logger = logging.getLogger("discus")
 
@@ -43,13 +44,14 @@ class DiscusGuard:
             print(f"Blocked: {e.event.details}")
     """
 
-    def __init__(self, config: Optional[GuardConfig] = None):
+    def __init__(self, config: Optional[GuardConfig] = None, rta_engine: Optional[RtaEngine] = None):
         self.config = config or GuardConfig()
         self.rule_engine = RuleEngine(self.config)
+        self.rta_engine = rta_engine  # RTA constitutional engine (optional)
         self._event_log: list[SessionEvent] = []
         self._on_kill_callbacks: list[Callable] = []
         self._killed_sessions: set[str] = set()
-        logger.info("DiscusGuard initialized")
+        logger.info("DiscusGuard initialized" + (" with RTA" if rta_engine else ""))
 
     def on_kill(self, callback: Callable[[SessionEvent], None]):
         """Register a callback for when a session is killed."""
@@ -73,62 +75,110 @@ class DiscusGuard:
             self._log_event(event)
             raise SessionKilledError(event)
 
-        # Run rule engine
-        result = self.rule_engine.evaluate(text)
+        # Layer 1: Pattern-based rules (fast)
+        pattern_result = self.rule_engine.evaluate(text)
 
-        if result is None:
-            # No violations — pass
-            event = SessionEvent(
-                session_id=session_id,
-                input_text=text[:200],
-                decision=KillDecision.PASS,
-                details="Passed all checks"
-            )
-            if self.config.log_all:
+        if pattern_result is not None:
+            violation_type, severity, details = pattern_result
+            # Decide: kill or warn based on severity threshold
+            severity_order = [Severity.LOW, Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL]
+            threshold_idx = severity_order.index(self.config.kill_threshold)
+            severity_idx = severity_order.index(severity)
+
+            if severity_idx >= threshold_idx:
+                # KILL
+                event = SessionEvent(
+                    session_id=session_id,
+                    input_text=text[:200],
+                    violation_type=violation_type,
+                    severity=severity,
+                    decision=KillDecision.KILL,
+                    details=details
+                )
                 self._log_event(event)
-            return GuardResponse(allowed=True, session_id=session_id, event=event)
+                self._killed_sessions.add(session_id)
+                self._fire_on_kill(event)
 
-        violation_type, severity, details = result
+                logger.warning(f"🛑 SESSION KILLED [{session_id}]: {details}")
+                raise SessionKilledError(event)
+            else:
+                # WARN
+                event = SessionEvent(
+                    session_id=session_id,
+                    input_text=text[:200],
+                    violation_type=violation_type,
+                    severity=severity,
+                    decision=KillDecision.WARN,
+                    details=f"Warning: {details}"
+                )
+                self._log_event(event)
+                logger.info(f"⚠️ Warning [{session_id}]: {details}")
+                return GuardResponse(
+                    allowed=True,
+                    session_id=session_id,
+                    event=event,
+                    message=f"Warning: {details}"
+                )
 
-        # Decide: kill or warn based on severity threshold
-        severity_order = [Severity.LOW, Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL]
-        threshold_idx = severity_order.index(self.config.kill_threshold)
-        severity_idx = severity_order.index(severity)
-
-        if severity_idx >= threshold_idx:
-            # KILL
-            event = SessionEvent(
+        # Layer 2: RTA constitutional rules (deep) — if configured
+        if self.rta_engine:
+            # Build RTA context from current state
+            previous_inputs = [e.input_text for e in self._event_log if e.session_id == session_id][-10:]
+            previous_outputs = []  # We'd need to capture assistant outputs in the log; TODO
+            context = RtaContext(
                 session_id=session_id,
-                input_text=text[:200],
-                violation_type=violation_type,
-                severity=severity,
-                decision=KillDecision.KILL,
-                details=details
+                input_text=text,
+                previous_inputs=previous_inputs,
+                previous_outputs=previous_outputs,
+                llm_provider=getattr(self.config, "llm_provider", None),
+                model=getattr(self.config, "model", None)
             )
+
+            allowed, results, decision = self.rta_engine.check(context)
+
+            if not allowed and decision == KillDecision.KILL:
+                # Find the highest priority violation
+                violation = next((r for r in results if r.is_violation and r.decision == KillDecision.KILL), None)
+                if violation:
+                    event = violation.to_event(session_id, text)
+                    self._log_event(event)
+                    self._killed_sessions.add(session_id)
+                    self._fire_on_kill(event)
+                    logger.warning(f"🛑 SESSION KILLED (RTA) [{session_id}]: {violation.details}")
+                    raise SessionKilledError(event)
+            elif decision == KillDecision.WARN:
+                # RTA warning — do not block, but log and optionally return message
+                warning_results = [r for r in results if r.is_violation and r.decision == KillDecision.WARN]
+                if warning_results:
+                    # Combine warnings
+                    details = "; ".join(r.details for r in warning_results)
+                    event = SessionEvent(
+                        session_id=session_id,
+                        input_text=text[:200],
+                        violation_type=ViolationType.CUSTOM,
+                        severity=Severity.MEDIUM,
+                        decision=KillDecision.WARN,
+                        details=f"RTA Warnings: {details}"
+                    )
+                    self._log_event(event)
+                    logger.info(f"⚠️ RTA Warning [{session_id}]: {details}")
+                    return GuardResponse(
+                        allowed=True,
+                        session_id=session_id,
+                        event=event,
+                        message=f"RTA Warning: {details}"
+                    )
+
+        # No violations — pass
+        event = SessionEvent(
+            session_id=session_id,
+            input_text=text[:200],
+            decision=KillDecision.PASS,
+            details="Passed all checks"
+        )
+        if self.config.log_all:
             self._log_event(event)
-            self._killed_sessions.add(session_id)
-            self._fire_on_kill(event)
-
-            logger.warning(f"🛑 SESSION KILLED [{session_id}]: {details}")
-            raise SessionKilledError(event)
-        else:
-            # WARN
-            event = SessionEvent(
-                session_id=session_id,
-                input_text=text[:200],
-                violation_type=violation_type,
-                severity=severity,
-                decision=KillDecision.WARN,
-                details=f"Warning: {details}"
-            )
-            self._log_event(event)
-            logger.info(f"⚠️ Warning [{session_id}]: {details}")
-            return GuardResponse(
-                allowed=True,
-                session_id=session_id,
-                event=event,
-                message=f"Warning: {details}"
-            )
+        return GuardResponse(allowed=True, session_id=session_id, event=event)
 
     def check_and_forward(
         self,
