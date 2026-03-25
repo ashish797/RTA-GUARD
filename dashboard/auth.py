@@ -3,17 +3,23 @@ RTA-GUARD Dashboard — Authentication
 
 Token-based auth for the dashboard API with multi-tenant support.
 Phase 4.2: RBAC permission enforcement via require_permission decorator.
+Phase 4.5: SSO (Single Sign-On) integration — OIDC + SAML, fallback to token auth.
 """
 import os
 import secrets
 import hashlib
 import base64
 import json
-from typing import Optional, Set
+import logging
+import time
+from typing import Optional, Set, Dict, Any
 from functools import wraps
 
-from fastapi import HTTPException, Depends, Header
+from fastapi import HTTPException, Depends, Header, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class AuthConfig(BaseModel):
@@ -326,3 +332,277 @@ def require_permission(permission_name: str):
         }
 
     return _check
+
+
+# ─── SSO Integration (Phase 4.5) ──────────────────────────────────
+
+
+class SSOAuth:
+    """
+    SSO authentication wrapper for FastAPI integration.
+
+    Provides:
+    - Login URL generation (redirect to SSO provider)
+    - Callback processing (exchange code for user profile)
+    - Token validation (verify SSO-issued tokens)
+    - Session management (map SSO users to local sessions)
+
+    Falls back to token auth if SSO is not configured.
+    """
+
+    def __init__(self):
+        self._sso_sessions: Dict[str, Dict[str, Any]] = {}  # session_id → user data
+        self._session_ttl: int = 3600  # 1 hour
+
+    def get_sso_manager(self):
+        """Get the SSO manager lazily."""
+        try:
+            from brahmanda.sso import get_sso_manager, SSOProviderType
+            return get_sso_manager(), SSOProviderType
+        except ImportError:
+            return None, None
+
+    def get_login_url(self, tenant_id: str = "", provider_name: str = "") -> Optional[str]:
+        """
+        Get the SSO login URL for a tenant/provider.
+
+        Returns None if SSO is not configured (caller should fall back to token auth).
+        """
+        manager, _ = self.get_sso_manager()
+        if manager is None:
+            return None
+
+        providers = manager.get_providers_for_tenant(tenant_id)
+        if not providers:
+            # Check global (no tenant)
+            providers = manager.get_providers_for_tenant("")
+
+        if not providers:
+            return None
+
+        # Use specified provider or first available
+        provider = None
+        if provider_name:
+            provider = manager.get_provider(tenant_id, provider_name)
+            if not provider:
+                provider = manager.get_provider("", provider_name)
+        if not provider:
+            provider = providers[0]
+
+        try:
+            return provider.get_login_url()
+        except Exception as e:
+            logger.warning(f"SSO login URL generation failed: {e}")
+            return None
+
+    def process_callback(self, code: str, state: Optional[str] = None,
+                         tenant_id: str = "", provider_name: str = "") -> Dict[str, Any]:
+        """
+        Process an SSO callback (authorization code exchange).
+
+        Returns a dict with session_id, user profile, and metadata.
+        Raises ValueError if SSO processing fails.
+        """
+        manager, _ = self.get_sso_manager()
+        if manager is None:
+            raise ValueError("SSO not configured")
+
+        # Find the right provider
+        provider = None
+        if provider_name:
+            provider = manager.get_provider(tenant_id, provider_name)
+            if not provider:
+                provider = manager.get_provider("", provider_name)
+        if not provider:
+            providers = manager.get_providers_for_tenant(tenant_id)
+            if not providers:
+                providers = manager.get_providers_for_tenant("")
+            if not providers:
+                raise ValueError("No SSO provider found")
+            provider = providers[0]
+
+        # Authenticate
+        profile = provider.authenticate(code, state=state)
+
+        # Create session
+        session_id = secrets.token_urlsafe(32)
+        self._sso_sessions[session_id] = {
+            "user_id": profile.user_id,
+            "email": profile.email,
+            "display_name": profile.display_name,
+            "tenant_id": profile.tenant_id or tenant_id,
+            "roles": profile.roles,
+            "groups": profile.groups,
+            "provider": profile.provider,
+            "provider_type": profile.provider_type.value,
+            "created_at": time.time(),
+        }
+
+        # Link to RBAC if available
+        self._sync_rbac(profile)
+
+        # Link to tenant if available
+        self._sync_tenant(profile)
+
+        return {
+            "session_id": session_id,
+            "user": profile.to_dict(),
+            "expires_in": self._session_ttl,
+        }
+
+    def verify_sso_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Verify an SSO session and return user data."""
+        if session_id not in self._sso_sessions:
+            return None
+        session = self._sso_sessions[session_id]
+        age = time.time() - session["created_at"]
+        if age > self._session_ttl:
+            del self._sso_sessions[session_id]
+            return None
+        return session
+
+    def _sync_rbac(self, profile):
+        """Assign RBAC roles to SSO user if RBAC is configured."""
+        try:
+            from brahmanda.rbac import get_rbac_manager, Role
+            rbac_mgr = get_rbac_manager()
+            if rbac_mgr is None or not profile.tenant_id:
+                return
+
+            # If user doesn't have a role yet, assign based on SSO groups/roles
+            existing_role = rbac_mgr.get_user_role(profile.user_id, profile.tenant_id)
+            if existing_role is not None:
+                return  # Already assigned
+
+            # Map SSO roles to RTA-GUARD roles
+            role_mapping = {
+                "admin": Role.ADMIN,
+                "administrator": Role.ADMIN,
+                "operator": Role.OPERATOR,
+                "viewer": Role.VIEWER,
+                "auditor": Role.AUDITOR,
+            }
+
+            for sso_role in profile.roles:
+                mapped = role_mapping.get(sso_role.lower())
+                if mapped:
+                    rbac_mgr.assign_role(
+                        user_id=profile.user_id,
+                        tenant_id=profile.tenant_id,
+                        role=mapped,
+                        assigned_by="sso",
+                    )
+                    logger.info(f"SSO auto-assigned role {mapped.value} to {profile.user_id}")
+                    return
+
+            # Default: assign viewer for new SSO users
+            rbac_mgr.assign_role(
+                user_id=profile.user_id,
+                tenant_id=profile.tenant_id,
+                role=Role.VIEWER,
+                assigned_by="sso",
+            )
+        except (ImportError, Exception) as e:
+            logger.debug(f"RBAC sync skipped: {e}")
+
+    def _sync_tenant(self, profile):
+        """Ensure the tenant exists for an SSO user."""
+        try:
+            from brahmanda.tenancy import get_tenant_manager
+            tenant_mgr = get_tenant_manager()
+            if tenant_mgr is None or not profile.tenant_id:
+                return
+            # Auto-create tenant if it doesn't exist
+            try:
+                tenant_mgr.get_tenant(profile.tenant_id)
+            except ValueError:
+                tenant_mgr.create_tenant(
+                    tenant_id=profile.tenant_id,
+                    name=f"SSO Tenant: {profile.tenant_id}",
+                    config={"source": "sso", "provider": profile.provider},
+                )
+                logger.info(f"SSO auto-created tenant: {profile.tenant_id}")
+        except (ImportError, Exception) as e:
+            logger.debug(f"Tenant sync skipped: {e}")
+
+
+# Global SSO auth instance
+_sso_auth: Optional[SSOAuth] = None
+
+
+def get_sso_auth() -> SSOAuth:
+    """Get or create the global SSO auth handler."""
+    global _sso_auth
+    if _sso_auth is None:
+        _sso_auth = SSOAuth()
+    return _sso_auth
+
+
+async def require_auth_with_sso(
+    authorization: Optional[str] = Header(None),
+    x_tenant_id: Optional[str] = Header(None),
+    x_sso_session: Optional[str] = Header(None),
+) -> dict:
+    """
+    FastAPI dependency: authenticate via SSO session or token, with tenant extraction.
+
+    Tries in order:
+    1. X-SSO-Session header (SSO session ID)
+    2. Bearer token (JWT → extract tenant + user)
+    3. No auth (if auth disabled)
+
+    Returns dict: {"authenticated": True, "tenant_id": ..., "user_id": ..., "source": "sso"|"token"}
+    """
+    auth_mgr = get_auth_manager()
+
+    # Auth disabled
+    if not auth_mgr.config.enabled:
+        return {"authenticated": True, "tenant_id": x_tenant_id, "user_id": None, "source": "disabled"}
+
+    # Try SSO session first
+    if x_sso_session:
+        sso = get_sso_auth()
+        session = sso.verify_sso_session(x_sso_session)
+        if session:
+            return {
+                "authenticated": True,
+                "tenant_id": x_tenant_id or session.get("tenant_id"),
+                "user_id": session.get("user_id"),
+                "source": "sso",
+                "role": None,  # Populated by RBAC check downstream
+            }
+        # Invalid/expired SSO session — fall through to token auth
+
+    # Token auth
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing auth. Provide Authorization: Bearer <token> or X-SSO-Session header."
+        )
+
+    token = authorization
+    if authorization.startswith("Bearer "):
+        token = authorization[7:]
+
+    if not auth_mgr.verify_token(token):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Extract tenant from header or JWT
+    tenant_id = x_tenant_id
+    user_id = None
+    if not tenant_id and authorization.startswith("Bearer "):
+        payload = _decode_jwt_payload(authorization[7:])
+        if payload:
+            tenant_id = _extract_tenant_from_payload(payload)
+            for key in ("sub", "user_id", "uid", "email"):
+                val = payload.get(key)
+                if val and isinstance(val, str):
+                    user_id = val
+                    break
+
+    return {
+        "authenticated": True,
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "source": "token",
+    }
