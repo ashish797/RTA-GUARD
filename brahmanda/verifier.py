@@ -24,6 +24,13 @@ from .mutation import MutationTracker
 
 logger = logging.getLogger(__name__)
 
+# Phase 3.1: Conscience Monitor (optional import for backward compat)
+try:
+    from .conscience import ConscienceMonitor
+    _CONSCIENCE_AVAILABLE = True
+except ImportError:
+    _CONSCIENCE_AVAILABLE = False
+
 # ─── Domain classification ─────────────────────────────────────────
 
 DOMAIN_KEYWORDS = {
@@ -433,10 +440,12 @@ class BrahmandaVerifier:
         brahmanda: Optional[BrahmandaMap] = None,
         use_pipeline: bool = True,
         scorer: Optional[ConfidenceScorer] = None,
+        conscience_monitor: Optional["ConscienceMonitor"] = None,
     ):
         self.brahmanda = brahmanda or BrahmandaMap()
         self.use_pipeline = use_pipeline
         self.scorer = scorer or ConfidenceScorer()
+        self.conscience = conscience_monitor  # Phase 3.1
         self._pipeline = None
         if self.use_pipeline:
             try:
@@ -449,6 +458,36 @@ class BrahmandaVerifier:
         if self._pipeline:
             return self._verify_via_pipeline(text, domain)
         return self._verify_legacy(text, domain)
+
+    def verify_and_record(
+        self,
+        text: str,
+        domain: str = "general",
+        agent_id: str = "",
+        session_id: str = "",
+        user_id: str = "",
+    ) -> VerifyResult:
+        """
+        Verify text and optionally record to Conscience Monitor.
+
+        If agent_id is provided and a conscience monitor is configured,
+        the verification result is recorded for behavioral profiling.
+        """
+        result = self.verify(text, domain=domain)
+
+        if self.conscience and agent_id and session_id:
+            contradicted = any(m.contradicted for m in result.claims) if result.claims else False
+            self.conscience.record_interaction(
+                agent_id=agent_id,
+                session_id=session_id,
+                verification_result=result,
+                user_id=user_id,
+                violation=contradicted,
+                violation_type="hallucination" if contradicted else "",
+                domain=domain,
+            )
+
+        return result
 
     def _verify_via_pipeline(self, text: str, domain: str) -> VerifyResult:
         pipeline_result = self._pipeline.verify(text, domain=domain)

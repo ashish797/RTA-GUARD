@@ -35,6 +35,64 @@ class AnomalyType(str, Enum):
     COMBINED = "combined"
 
 
+# ─── Live Drift Thresholds (Phase 3.2) ─────────────────────────────
+
+class DriftLevel(str, Enum):
+    """Drift severity levels."""
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
+    CRITICAL = "critical"
+
+
+DRIFT_HEALTHY_MAX = 0.15
+DRIFT_DEGRADED_MAX = 0.35
+DRIFT_UNHEALTHY_MAX = 0.60
+
+
+def classify_drift(score: float) -> DriftLevel:
+    """Classify a drift score into a DriftLevel."""
+    if score < DRIFT_HEALTHY_MAX:
+        return DriftLevel.HEALTHY
+    elif score < DRIFT_DEGRADED_MAX:
+        return DriftLevel.DEGRADED
+    elif score < DRIFT_UNHEALTHY_MAX:
+        return DriftLevel.UNHEALTHY
+    else:
+        return DriftLevel.CRITICAL
+
+
+@dataclass
+class DriftComponents:
+    """Breakdown of the 5 drift components (matching AnRtaDriftRule)."""
+    semantic: float = 0.0
+    alignment: float = 0.0
+    scope: float = 0.0
+    confidence: float = 0.0
+    rule_proximity: float = 0.0
+
+    def weighted_score(self) -> float:
+        """Compute weighted chaos score from components."""
+        score = (
+            0.30 * self.semantic
+            + 0.25 * self.alignment
+            + 0.20 * self.scope
+            + 0.15 * self.confidence
+            + 0.10 * self.rule_proximity
+        )
+        return round(min(score, 1.0), 4)
+
+    def to_dict(self) -> dict:
+        return {
+            "semantic": round(self.semantic, 4),
+            "alignment": round(self.alignment, 4),
+            "scope": round(self.scope, 4),
+            "confidence": round(self.confidence, 4),
+            "rule_proximity": round(self.rule_proximity, 4),
+            "weighted_score": self.weighted_score(),
+        }
+
+
 @dataclass
 class AgentProfile:
     """
@@ -57,6 +115,12 @@ class AgentProfile:
     last_seen: str = ""
     last_confidence: float = 1.0      # Most recent confidence for drift calc
     confidence_history: List[float] = field(default_factory=list)  # Last N confidences
+    # Live drift tracking (Phase 3.2)
+    live_drift_score: float = 0.0          # EMA-smoothed drift score
+    live_drift_level: str = "healthy"      # DriftLevel value
+    drift_components: Dict[str, float] = field(default_factory=dict)  # latest component breakdown
+    drift_trend: str = "stable"            # "increasing", "stable", "decreasing"
+    drift_history: List[float] = field(default_factory=list)  # last N drift scores
 
     def __post_init__(self):
         if not self.first_seen:
@@ -220,6 +284,12 @@ class AgentProfile:
             "last_seen": self.last_seen,
             "health_score": self.get_score(),
             "confidence_history_len": len(self.confidence_history),
+            # Live drift fields (Phase 3.2)
+            "live_drift_score": round(self.live_drift_score, 4),
+            "live_drift_level": self.live_drift_level,
+            "drift_components": self.drift_components,
+            "drift_trend": self.drift_trend,
+            "drift_history_len": len(self.drift_history),
         }
 
 

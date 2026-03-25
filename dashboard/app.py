@@ -62,6 +62,17 @@ auth = init_auth(auth_config)
 # Initialize RTA engine with verification pipeline (Phase 2.3)
 rta_engine = RtaEngine(GuardConfig(log_all=True), verifier=brahmanda_verifier, pipeline=verification_pipeline)
 
+# Initialize Conscience Monitor (Phase 3.1)
+try:
+    from brahmanda.conscience import ConscienceMonitor
+    conscience_monitor = ConscienceMonitor(in_memory=True)  # Dashboard uses in-memory for demo
+    # Wire into verifier
+    brahmanda_verifier.conscience = conscience_monitor
+    logger.info("Conscience Monitor initialized (Phase 3.1)")
+except Exception as e:
+    conscience_monitor = None
+    logger.warning(f"Conscience Monitor init failed: {e}")
+
 # Global guard instance for the dashboard — WITH RTA enabled
 guard = DiscusGuard(GuardConfig(log_all=True), rta_engine=rta_engine)
 
@@ -199,6 +210,77 @@ async def brahmanda_status():
 
 
 # --- Auth endpoints ---
+
+# --- Conscience Monitor endpoints (Phase 3.1) ---
+
+@app.get("/api/conscience/agents")
+async def conscience_agents(auth: bool = Depends(require_auth)):
+    """List all registered agents with health scores."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available", "agents": []}
+    agents = conscience_monitor.list_agents()
+    return {
+        "agents": agents,
+        "total": len(agents),
+    }
+
+
+@app.get("/api/conscience/health/{agent_id}")
+async def conscience_health(agent_id: str, auth: bool = Depends(require_auth)):
+    """Get health score for a specific agent."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return conscience_monitor.get_agent_health(agent_id)
+
+
+@app.get("/api/conscience/anomaly/{agent_id}")
+async def conscience_anomaly(agent_id: str, auth: bool = Depends(require_auth)):
+    """Detect anomaly for a specific agent."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    is_anomalous, anomaly_type, detail = conscience_monitor.detect_anomaly(agent_id)
+    return {
+        "agent_id": agent_id,
+        "is_anomalous": is_anomalous,
+        "anomaly_type": anomaly_type.value,
+        "detail": detail,
+    }
+
+
+@app.get("/api/conscience/session/{agent_id}/{session_id}")
+async def conscience_session_drift(
+    agent_id: str, session_id: str, auth: bool = Depends(require_auth)
+):
+    """Get session drift metrics."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return conscience_monitor.get_session_drift(agent_id, session_id)
+
+
+@app.get("/api/conscience/sessions")
+async def conscience_sessions(
+    agent_id: Optional[str] = None, auth: bool = Depends(require_auth)
+):
+    """List session profiles, optionally filtered by agent."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available", "sessions": []}
+    sessions = conscience_monitor.list_sessions(agent_id=agent_id)
+    return {
+        "sessions": sessions,
+        "total": len(sessions),
+    }
+
+
+@app.get("/api/conscience/users")
+async def conscience_users(auth: bool = Depends(require_auth)):
+    """List all user profiles."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available", "users": []}
+    users = conscience_monitor.list_users()
+    return {
+        "users": users,
+        "total": len(users),
+    }
 
 @app.post("/api/login")
 async def login(req: LoginRequest):

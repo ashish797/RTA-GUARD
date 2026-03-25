@@ -42,6 +42,14 @@ try:
 except ImportError:
     _MUTATION_AVAILABLE = False
 
+# Behavioral Profiling (Phase 3.1)
+try:
+    from .profiles import AgentProfile, SessionProfile, UserProfile, AnomalyType
+    from .conscience import ConscienceMonitor, BehavioralBaseline, get_monitor
+    _CONSCIENCE_AVAILABLE = True
+except ImportError:
+    _CONSCIENCE_AVAILABLE = False
+
 # Qdrant vector backend (optional — requires qdrant-client + openai)
 try:
     from .qdrant_client import QdrantBrahmanda, create_qdrant_seed_map, get_qdrant_verifier
@@ -108,4 +116,15 @@ if _MUTATION_AVAILABLE:
         "MutationTracker",
         "Mutation",
         "compute_diff",
+    ])
+
+if _CONSCIENCE_AVAILABLE:
+    __all__.extend([
+        "AgentProfile",
+        "SessionProfile",
+        "UserProfile",
+        "AnomalyType",
+        "ConscienceMonitor",
+        "BehavioralBaseline",
+        "get_monitor",
     ])
