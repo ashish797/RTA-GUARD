@@ -114,6 +114,14 @@ class SatyaRule(RtaRule):
     priority = 1  # Highest
     tier = 1
 
+    def __init__(self, verifier=None):
+        """
+        Args:
+            verifier: Optional BrahmandaVerifier for ground truth verification.
+                      If provided, uses real verification instead of heuristics.
+        """
+        self.verifier = verifier
+
     def check(self, context: RtaContext) -> RuleResult:
         if context.role != "assistant":
             return RuleResult(self.rule_id, False, KillDecision.PASS, Severity.LOW, "", {})
@@ -122,9 +130,51 @@ class SatyaRule(RtaRule):
         if not output.strip():
             return RuleResult(self.rule_id, False, KillDecision.PASS, Severity.LOW, "", {})
 
-        # If we have a Brahmanda Map reference, check against it
+        # === BRAHMANDA MAP VERIFICATION (Phase 2) ===
+        if self.verifier:
+            try:
+                result = self.verifier.verify(output)
+                if result.decision.value == "block":
+                    return RuleResult(
+                        self.rule_id,
+                        True,
+                        KillDecision.KILL,
+                        self.severity,
+                        f"Satya violation: {result.details}",
+                        {
+                            "verified": False,
+                            "confidence": result.overall_confidence,
+                            "claims_checked": len(result.claims),
+                            "contradicted_claims": [
+                                c.to_dict() for c in result.claims if c.contradicted
+                            ],
+                        }
+                    )
+                elif result.decision.value == "warn":
+                    return RuleResult(
+                        self.rule_id,
+                        True,
+                        KillDecision.WARN,
+                        Severity.HIGH,
+                        f"Satya warning: {result.details}",
+                        {"confidence": result.overall_confidence}
+                    )
+                # PASS — verified
+                return RuleResult(
+                    self.rule_id,
+                    False,
+                    KillDecision.PASS,
+                    Severity.LOW,
+                    "",
+                    {"confidence": result.overall_confidence}
+                )
+            except Exception as e:
+                # Don't block on verification errors — fall through to heuristics
+                pass
+
+        # === FALLBACK: Heuristic checks (Phase 1) ===
+        # If we have a ground truth reference dict, check against it
         if context.ground_truth_reference:
-            # This is where real Satya verification would happen
             verified = self._verify_against_ground_truth(output, context.ground_truth_reference)
             if not verified:
                 return RuleResult(
@@ -136,10 +186,8 @@ class SatyaRule(RtaRule):
                     {"verified": False}
                 )
 
-        # For now (Phase 1), we do basic plausibility checks
-        # In Phase 2+, this will use real ground truth
+        # Over-confident long responses tend to hallucinate
         if len(output) > 500 and "!" in output:
-            # Overly enthusiastic long responses tend to hallucinate
             return RuleResult(
                 self.rule_id,
                 True,
@@ -785,8 +833,15 @@ class RtaEngine:
     enforces the cosmic order.
     """
 
-    def __init__(self, config: Optional[GuardConfig] = None):
+    def __init__(self, config: Optional[GuardConfig] = None, verifier=None):
+        """
+        Args:
+            config: Guard configuration.
+            verifier: Optional BrahmandaVerifier for ground truth verification.
+                      If provided, SatyaRule will use real verification.
+        """
         self.config = config or GuardConfig()
+        self.verifier = verifier
         self.rules: List[RtaRule] = []
         self._initialize_rules()
         self.violation_history: List[dict] = []
@@ -796,7 +851,7 @@ class RtaEngine:
         """Register all R1-R13 rules in priority order."""
         self.rules = [
             # Tier 1: Mahāvākyas (priority 1-5)
-            SatyaRule(),
+            SatyaRule(verifier=self.verifier),  # R1 — uses Brahmanda Map if available
             YamaRule(),
             MitraRule(),
             AgniRule(),
