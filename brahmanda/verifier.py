@@ -6,12 +6,232 @@ MVP: In-memory fact store with exact/normalized matching.
 Future: Qdrant for semantic search, PostgreSQL for facts.
 """
 import re
-from typing import List, Optional, Dict
+import logging
+from typing import List, Optional, Dict, Tuple
 from .models import (
     GroundTruthFact, Source, SourceAuthority, FactType,
     ClaimMatch, VerifyResult, VerifyDecision
 )
 from .extractor import extract_claims, ExtractedClaim
+
+logger = logging.getLogger(__name__)
+
+# ─── Domain classification ─────────────────────────────────────────
+
+DOMAIN_KEYWORDS = {
+    "medical": {"diagnosis", "symptom", "treatment", "disease", "patient", "medicine", "doctor", "hospital", "drug", "dose", "surgery", "cancer", "infection"},
+    "science": {"experiment", "hypothesis", "atom", "molecule", "gravity", "orbit", "temperature", "celsius", "kelvin", "physics", "chemistry", "biology", "quantum", "evolution"},
+    "history": {"war", "empire", "century", "founded", "dynasty", "king", "queen", "president", "election", "revolution", "treaty", "civilization"},
+    "technology": {"software", "hardware", "algorithm", "programming", "protocol", "network", "database", "api", "server", "computer", "internet"},
+    "geography": {"capital", "country", "continent", "river", "mountain", "ocean", "population", "border", "latitude", "longitude"},
+    "mathematics": {"theorem", "equation", "proof", "integral", "derivative", "prime", "factorial", "matrix", "vector"},
+}
+
+
+def classify_domain(text: str) -> str:
+    """Classify the domain of a text based on keyword matching."""
+    words = set(text.lower().split())
+    scores = {}
+    for domain, keywords in DOMAIN_KEYWORDS.items():
+        overlap = len(words & keywords)
+        if overlap > 0:
+            scores[domain] = overlap
+    if scores:
+        return max(scores, key=scores.get)
+    return "general"
+
+
+# ─── Enhanced contradiction detection ──────────────────────────────
+
+# Common stopwords that don't contribute to factual content
+STOPWORDS = {
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "can", "of", "in", "to", "for",
+    "with", "on", "at", "by", "from", "as", "into", "about", "and", "or",
+    "but", "not", "no", "nor", "so", "yet", "if", "then", "than", "that",
+    "this", "these", "those", "it", "its", "he", "she", "they", "we", "you",
+    "my", "your", "his", "her", "our", "their", "which", "who", "whom",
+    "what", "where", "when", "how", "very", "just", "also", "too", "only",
+    "quite", "really", "most", "more", "much", "some", "any", "all", "each",
+    "every", "both", "few", "such", "there", "here",
+}
+
+# Words that signal negation (claim is negated vs fact)
+NEGATION_WORDS = {"not", "never", "no", "neither", "nor", "nothing", "nowhere", "nobody", "none"}
+NEGATION_CONTRACTIONS = {"isn't", "aren't", "wasn't", "weren't", "don't", "doesn't", "didn't", "won't", "wouldn't", "couldn't", "shouldn't", "hasn't", "haven't", "hadn't"}
+
+# Relationship predicates that carry the core factual claim
+RELATION_PREDICATES = {
+    "is the capital of", "is capital of",
+    "is the largest", "is largest",
+    "is located in", "is found in", "is in",
+    "borders", "is part of", "belongs to",
+    "has a population of", "has population of",
+    "was founded in", "was born in",
+    "developed", "invented", "discovered",
+}
+
+
+def _normalize_for_comparison(text: str) -> str:
+    """Normalize text for comparison — lowercase, strip, collapse whitespace."""
+    return re.sub(r'\s+', ' ', text.lower().strip())
+
+
+def _extract_content_words(text: str) -> set:
+    """Extract meaningful content words (excluding stopwords)."""
+    words = set(re.findall(r'[a-z]{2,}', text.lower()))
+    return words - STOPWORDS
+
+
+def _extract_entities(text: str) -> set:
+    """Extract capitalized entities (proper nouns) from text."""
+    # Multi-word entities: "United States", "New York"
+    entities = set()
+    # Single capitalized words
+    for match in re.finditer(r'\b([A-Z][a-z]+)\b', text):
+        entities.add(match.group(1).lower())
+    # Multi-word: consecutive capitalized words
+    for match in re.finditer(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b', text):
+        entities.add(match.group(0).lower())
+    return entities
+
+
+def _extract_predicate(text: str) -> str:
+    """Extract the main predicate/relation from a claim."""
+    text_lower = text.lower()
+    for pred in RELATION_PREDICATES:
+        if pred in text_lower:
+            return pred
+    return ""
+
+
+def _extract_value(text: str, predicate: str) -> str:
+    """Extract the 'value' part after a predicate."""
+    if not predicate:
+        return ""
+    text_lower = text.lower()
+    idx = text_lower.find(predicate)
+    if idx >= 0:
+        after = text[idx + len(predicate):].strip()
+        # Remove trailing period
+        after = after.rstrip('.')
+        return after.strip()
+    return ""
+
+
+def _has_negation(text: str) -> bool:
+    """Check if text contains negation."""
+    words = set(text.lower().split())
+    if words & NEGATION_WORDS:
+        return True
+    lower = text.lower()
+    for contraction in NEGATION_CONTRACTIONS:
+        if contraction in lower:
+            return True
+    return False
+
+
+def _numbers_in_text(text: str) -> set:
+    """Extract all numbers from text for numeric comparison."""
+    return set(re.findall(r'\b\d[\d,]*\.?\d*\b', text))
+
+
+def enhanced_check_contradiction(claim: str, fact: str, similarity: float) -> Tuple[bool, str]:
+    """
+    Enhanced contradiction detection with multiple heuristics.
+
+    Returns:
+        (is_contradicted: bool, reason: str)
+    """
+    claim_norm = _normalize_for_comparison(claim)
+    fact_norm = _normalize_for_comparison(fact)
+
+    # If they're essentially the same, no contradiction
+    if claim_norm == fact_norm:
+        return False, "exact_match"
+
+    # ── Heuristic 1: Negation mismatch ──
+    claim_neg = _has_negation(claim)
+    fact_neg = _has_negation(fact)
+    if claim_neg != fact_neg:
+        # One says "X is Y", other says "X is not Y" — contradiction
+        # But only if they share enough content words
+        claim_content = _extract_content_words(claim)
+        fact_content = _extract_content_words(fact)
+        shared = claim_content & fact_content
+        if len(shared) >= 2:
+            return True, f"negation_mismatch: claim_neg={claim_neg}, fact_neg={fact_neg}"
+
+    # ── Heuristic 2: Same subject + same predicate, different value ──
+    claim_entities = _extract_entities(claim)
+    fact_entities = _extract_entities(fact)
+    shared_entities = claim_entities & fact_entities
+
+    claim_pred = _extract_predicate(claim)
+    fact_pred = _extract_predicate(fact)
+
+    if claim_pred and fact_pred and claim_pred == fact_pred and shared_entities:
+        claim_val = _extract_value(claim, claim_pred)
+        fact_val = _extract_value(fact, fact_pred)
+        if claim_val and fact_val and claim_val.lower() != fact_val.lower():
+            # Same predicate, same entities, different values → contradiction
+            return True, f"value_mismatch: '{claim_val}' vs '{fact_val}' under '{claim_pred}'"
+
+    # ── Heuristic 2b: Generic "X is [prep] Y" vs "X is [prep] Z" ──
+    # Handles: "Eiffel Tower is in London" vs "Eiffel Tower is in Paris"
+    for pred_pattern in ["is the capital of", "is capital of", "is in", "is located in", "is found in"]:
+        if pred_pattern in claim.lower() and pred_pattern in fact.lower():
+            claim_parts = claim.lower().split(pred_pattern)
+            fact_parts = fact.lower().split(pred_pattern)
+            if len(claim_parts) >= 2 and len(fact_parts) >= 2:
+                claim_subject = claim_parts[0].strip()  # "paris" or "eiffel tower"
+                fact_subject = fact_parts[0].strip()     # "berlin" or "eiffel tower"
+                claim_object = claim_parts[1].strip().rstrip('.')   # "france" or "london"
+                fact_object = fact_parts[1].strip().rstrip('.')
+                # Subjects must be the same (or very similar), objects must differ
+                subj_sim = len(set(claim_subject.split()) & set(fact_subject.split())) / max(len(set(claim_subject.split()) | set(fact_subject.split())), 1)
+                if subj_sim >= 0.5 and claim_object != fact_object:
+                    return True, f"location_contradiction: '{claim_subject}' {pred_pattern} '{claim_object}' vs '{fact_object}'"
+
+    # ── Heuristic 3: High similarity but different entities (capital pattern) ──
+    if similarity >= 0.4 and claim_pred and fact_pred and claim_pred == fact_pred:
+        # Check if the subject differs: "capital of France" vs "capital of Germany"
+        claim_subj = _extract_value(claim, claim_pred) if "capital" in claim_pred else ""
+        fact_subj = _extract_value(fact, fact_pred) if "capital" in fact_pred else ""
+        # Actually for "is the capital of", the entity BEFORE the predicate is the value
+        # "Paris is the capital of France" — predicate "is the capital of", value "France"
+        # So if predicates match but entities after differ, check if the subject (before predicate) differs
+        for pred_pattern in ["is the capital of", "is capital of"]:
+            if pred_pattern in claim.lower() and pred_pattern in fact.lower():
+                claim_parts = claim.lower().split(pred_pattern)
+                fact_parts = fact.lower().split(pred_pattern)
+                if len(claim_parts) >= 2 and len(fact_parts) >= 2:
+                    claim_value = claim_parts[0].strip()  # "paris"
+                    fact_value = fact_parts[0].strip()     # "berlin"
+                    claim_subject = claim_parts[1].strip()  # "france"
+                    fact_subject = fact_parts[1].strip()
+                    if claim_subject == fact_subject and claim_value != fact_value:
+                        # Same subject (France), different values (Paris vs Berlin) → contradiction!
+                        return True, f"capital_contradiction: '{claim_value}' vs '{fact_value}' for '{claim_subject}'"
+
+    # ── Heuristic 4: Numeric contradiction ──
+    claim_nums = _numbers_in_text(claim)
+    fact_nums = _numbers_in_text(fact)
+    if claim_nums and fact_nums and claim_nums != fact_nums:
+        # If they share subject words but have different numbers, it might be a contradiction
+        claim_content = _extract_content_words(claim) - {"population", "area", "temperature", "speed", "distance", "million", "billion", "thousand"}
+        fact_content = _extract_content_words(fact) - {"population", "area", "temperature", "speed", "distance", "million", "billion", "thousand"}
+        shared = claim_content & fact_content
+        if len(shared) >= 2:
+            return True, f"numeric_mismatch: claim={claim_nums}, fact={fact_nums}"
+
+    # ── Heuristic 5: Very low similarity but share entities = likely unrelated, not contradictory ──
+    if similarity < 0.3:
+        return False, "too_dissimilar_for_contradiction"
+
+    # Default: not contradictory
+    return False, "no_contradiction_detected"
 
 
 class BrahmandaMap:
@@ -227,11 +447,22 @@ class BrahmandaVerifier:
         )
 
     def _verify_claim(self, claim: ExtractedClaim, domain: str) -> ClaimMatch:
-        """Verify a single claim against ground truth."""
-        # Search for matching facts
-        facts = self.brahmanda.search(claim.text, domain=domain)
+        """Verify a single claim against ground truth using multi-fact cross-verification."""
+        # Search for matching facts — try both specific domain and general
+        facts_specific = self.brahmanda.search(claim.text, domain=domain, limit=5)
+        facts_general = []
+        if domain != "general":
+            facts_general = self.brahmanda.search(claim.text, domain="general", limit=5)
 
-        if not facts:
+        # Merge and deduplicate by fact ID
+        seen_ids = set()
+        all_facts = []
+        for f in facts_specific + facts_general:
+            if f.id not in seen_ids:
+                seen_ids.add(f.id)
+                all_facts.append(f)
+
+        if not all_facts:
             return ClaimMatch(
                 claim=claim.text,
                 matched_fact=None,
@@ -240,92 +471,105 @@ class BrahmandaVerifier:
                 reason="No matching fact found in ground truth",
             )
 
-        best_match = facts[0]
-        similarity = self._calculate_similarity(claim.text, best_match.claim)
+        # Cross-verify: check claim against ALL matched facts
+        best_match = None
+        best_similarity = 0.0
+        best_contradicted = False
+        best_reason = ""
+        contradiction_found = False
+        contradiction_fact = None
 
-        # Check for contradiction
-        contradicted = self._check_contradiction(claim.text, best_match.claim, similarity)
+        for fact in all_facts:
+            similarity = self._calculate_similarity(claim.text, fact.claim)
+            contradicted, contra_reason = self._check_contradiction(claim.text, fact.claim, similarity)
 
-        reason = ""
-        if contradicted:
-            reason = f"Claim contradicts verified fact: '{best_match.claim}'"
-        elif similarity >= 0.8:
-            reason = "High confidence match with ground truth"
-        elif similarity >= 0.5:
-            reason = "Partial match with ground truth"
-        else:
-            reason = "Low confidence match"
+            if contradicted:
+                # Weight by fact confidence: higher-confidence facts are more authoritative
+                fact_conf = fact.calculate_effective_confidence()
+                if fact_conf >= 0.5:  # Only trust contradictions from authoritative sources
+                    contradiction_found = True
+                    contradiction_fact = fact
+                    best_contradicted = True
+                    best_match = fact
+                    best_similarity = similarity
+                    best_reason = f"Claim contradicts verified fact (conf={fact_conf:.2f}): '{fact.claim}' [{contra_reason}]"
+                    break  # One authoritative contradiction is enough
+
+            # Track best non-contradictory match
+            if similarity > best_similarity and not contradicted:
+                best_similarity = similarity
+                best_match = fact
+                best_contradicted = False
+
+        # If no contradiction found, use best match
+        if not contradiction_found and best_match:
+            fact_conf = best_match.calculate_effective_confidence()
+            if best_similarity >= 0.8:
+                best_reason = f"High confidence match (sim={best_similarity:.2f}, conf={fact_conf:.2f})"
+            elif best_similarity >= 0.5:
+                best_reason = f"Partial match (sim={best_similarity:.2f}, conf={fact_conf:.2f})"
+            else:
+                best_reason = f"Low confidence match (sim={best_similarity:.2f})"
+
+        # Domain-aware check: general facts shouldn't contradict domain-specific claims
+        if contradiction_found and contradiction_fact and domain != "general":
+            if contradiction_fact.domain == "general" and domain in DOMAIN_KEYWORDS:
+                # A general fact contradicting a domain-specific claim is weaker evidence
+                logger.debug(f"Domain mismatch: general fact contradicting {domain} claim — weakening signal")
+                # Don't downgrade, but log it
 
         return ClaimMatch(
             claim=claim.text,
             matched_fact=best_match,
-            similarity=similarity,
-            contradicted=contradicted,
-            reason=reason,
+            similarity=best_similarity,
+            contradicted=best_contradicted,
+            reason=best_reason or "No clear match found",
         )
 
     def _calculate_similarity(self, claim: str, fact: str) -> float:
         """
         Calculate similarity between claim and fact.
-        MVP: Word overlap ratio.
+        Uses content-word Jaccard + containment + entity overlap.
         Future: Embedding cosine similarity (via Qdrant).
         """
-        claim_words = set(claim.lower().split())
-        fact_words = set(fact.lower().split())
+        # Content-word Jaccard (more meaningful than raw word overlap)
+        claim_content = _extract_content_words(claim)
+        fact_content = _extract_content_words(fact)
 
-        if not claim_words or not fact_words:
+        if not claim_content or not fact_content:
             return 0.0
 
-        intersection = claim_words & fact_words
-        union = claim_words | fact_words
-
-        # Jaccard similarity
+        intersection = claim_content & fact_content
+        union = claim_content | fact_content
         jaccard = len(intersection) / len(union) if union else 0.0
 
-        # Also check containment
+        # Boost for entity overlap (proper nouns are strong signals)
+        claim_entities = _extract_entities(claim)
+        fact_entities = _extract_entities(fact)
+        if claim_entities and fact_entities:
+            entity_overlap = len(claim_entities & fact_entities) / len(claim_entities | fact_entities)
+            jaccard = max(jaccard, entity_overlap)
+
+        # Containment boost
         claim_lower = claim.lower()
         fact_lower = fact.lower()
         if claim_lower in fact_lower or fact_lower in claim_lower:
             jaccard = max(jaccard, 0.7)
 
-        return round(jaccard, 4)
+        # Predicate match boost
+        claim_pred = _extract_predicate(claim)
+        fact_pred = _extract_predicate(fact)
+        if claim_pred and fact_pred and claim_pred == fact_pred:
+            jaccard = max(jaccard, 0.4)  # Same predicate = at least moderately similar
 
-    def _check_contradiction(self, claim: str, fact: str, similarity: float) -> bool:
+        return round(min(jaccard, 1.0), 4)
+
+    def _check_contradiction(self, claim: str, fact: str, similarity: float) -> Tuple[bool, str]:
         """
         Check if the claim contradicts the fact.
-        Simple heuristic: if subjects match but predicates differ significantly.
+        Delegates to enhanced_check_contradiction for multi-heuristic detection.
         """
-        if similarity < 0.3:
-            return False  # Too different to be a contradiction
-
-        claim_lower = claim.lower()
-        fact_lower = fact.lower()
-
-        # Check for negation
-        negation_patterns = [
-            (r"not\s+", True),
-            (r"isn't\s+", True),
-            (r"wasn't\s+", True),
-            (r"don't\s+", True),
-            (r"never\s+", True),
-            (r"is\s+the\s+", False),
-            (r"are\s+the\s+", False),
-        ]
-
-        claim_has_negation = any(re.search(p, claim_lower) for p, neg in negation_patterns if neg)
-        fact_has_negation = any(re.search(p, fact_lower) for p, neg in negation_patterns if neg)
-
-        # If one has negation and the other doesn't (and they share words), it's a contradiction
-        if claim_has_negation != fact_has_negation:
-            return True
-
-        # Check for different values in similar subjects
-        # e.g., "Paris is the capital" vs "Berlin is the capital"
-        # Extract the subject-verb-object pattern
-        subjects_match = self._extract_subject(claim) == self._extract_subject(fact)
-        values_differ = not self._values_overlap(claim, fact)
-
-        return subjects_match and values_differ
+        return enhanced_check_contradiction(claim, fact, similarity)
 
     def _extract_subject(self, text: str) -> str:
         """Extract the main subject from a claim."""

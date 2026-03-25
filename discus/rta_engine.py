@@ -139,6 +139,8 @@ class SatyaRule(RtaRule):
     """R1 — SATYA: Every output must be traceable to verified reality.
 
     Enhanced logic: When confidence ≥ 0.75 AND verifiability < 0.75 → HIGH violation.
+    Phase 2.3: Uses VerificationPipeline for enhanced multi-fact cross-verification.
+    Falls back to simple BrahmandaVerifier if pipeline unavailable.
     """
     rule_id = "satya"
     name = "Satya (Truth)"
@@ -150,13 +152,23 @@ class SatyaRule(RtaRule):
     SATYA_FLOOR = 0.75
     CONFIDENCE_THRESHOLD = 0.75
 
-    def __init__(self, verifier=None):
+    def __init__(self, verifier=None, pipeline=None):
         """
         Args:
             verifier: Optional BrahmandaVerifier for ground truth verification.
-                      If provided, uses real verification; else uses heuristics.
+            pipeline: Optional VerificationPipeline for enhanced verification.
+                      If provided, takes precedence over verifier.
+                      Falls back to verifier if pipeline not available.
         """
         self.verifier = verifier
+        self.pipeline = pipeline
+        # Auto-create pipeline from verifier if pipeline not provided but verifier is
+        if not self.pipeline and self.verifier:
+            try:
+                from brahmanda.pipeline import VerificationPipeline
+                self.pipeline = VerificationPipeline(self.verifier)
+            except ImportError:
+                pass  # Fall back to simple verifier
 
     def check(self, context: RtaContext) -> RuleResult:
         if context.role != "assistant":
@@ -166,44 +178,108 @@ class SatyaRule(RtaRule):
         if not output.strip():
             return RuleResult(self.rule_id, False, KillDecision.PASS, Severity.LOW, "", {})
 
-        # Use Brahmanda Map verification if available
+        # Use pipeline if available (Phase 2.3 enhanced verification)
+        if self.pipeline:
+            return self._check_with_pipeline(output, context)
+
+        # Use simple verifier as fallback
         if self.verifier:
-            result = self.verifier.verify(output)
-            verifiability = result.overall_confidence  # The verification confidence
-            
-            # Dummy confidence (since we don't have model's stated confidence)
-            # In real integration, we'd get the model's confidence from the LLM provider
-            model_confidence = self._estimate_confidence(output)  # Heuristic
+            return self._check_with_verifier(output, context)
 
-            if model_confidence >= self.CONFIDENCE_THRESHOLD and verifiability < self.SATYA_FLOOR:
-                return RuleResult(
-                    self.rule_id,
-                    True,
-                    KillDecision.KILL,
-                    Severity.HIGH,
-                    f"SATYA_BREACH: confidence ≥ {self.CONFIDENCE_THRESHOLD} "
-                    f"but verifiability = {verifiability:.2f}",
-                    {
-                        "model_confidence": model_confidence,
-                        "verifiability": verifiability,
-                        "threshold": self.CONFIDENCE_THRESHOLD,
-                        "claims_checked": len(result.claims),
-                        "contradictions": [c.to_dict() for c in result.claims if c.contradicted],
-                    }
-                )
-            elif model_confidence >= (self.CONFIDENCE_THRESHOLD * 0.8) and verifiability < (self.SATYA_FLOOR * 0.8):
-                return RuleResult(
-                    self.rule_id,
-                    True,
-                    KillDecision.WARN,
-                    Severity.MEDIUM,
-                    f"SATYA_WARNING: confidence-verifiability gap detected",
-                    {"model_confidence": model_confidence, "verifiability": verifiability}
-                )
-            # Pass
-            return RuleResult(self.rule_id, False, KillDecision.PASS, Severity.LOW, "", {"verifiability": verifiability})
+        # No verification backend — heuristic fallback
+        return self._check_heuristic(output)
 
-        # Fallback heuristic (if no verifier)
+    def _check_with_pipeline(self, output: str, context: RtaContext) -> RuleResult:
+        """Enhanced SATYA check using the VerificationPipeline."""
+        result = self.pipeline.verify(output)
+        verifiability = result.overall_confidence
+        model_confidence = self._estimate_confidence(output)
+
+        # Build audit trail metadata
+        audit_metadata = {
+            "model_confidence": model_confidence,
+            "verifiability": verifiability,
+            "threshold": self.CONFIDENCE_THRESHOLD,
+            "pipeline_version": result.metadata.get("pipeline_version", "1.0"),
+            "claims_checked": result.claim_count,
+            "claims_passed": result.passed_count,
+            "claims_blocked": result.blocked_count,
+            "claims_warned": result.warned_count,
+            "verification_details": result.to_dict(),
+        }
+
+        # Pipeline found contradictions → BLOCK
+        if result.overall_decision.value == "block":
+            contradictions = [c for c in result.claims if c.contradicted]
+            return RuleResult(
+                self.rule_id,
+                True,
+                KillDecision.KILL,
+                Severity.HIGH,
+                f"SATYA_BREACH: {result.blocked_count}/{result.claim_count} claims contradicted — "
+                f"{contradictions[0].reason if contradictions else 'details in metadata'}",
+                audit_metadata,
+            )
+
+        # Confidence-verifiability gap (enhanced spec)
+        if model_confidence >= self.CONFIDENCE_THRESHOLD and verifiability < self.SATYA_FLOOR:
+            return RuleResult(
+                self.rule_id,
+                True,
+                KillDecision.KILL,
+                Severity.HIGH,
+                f"SATYA_BREACH: confidence ≥ {self.CONFIDENCE_THRESHOLD} "
+                f"but verifiability = {verifiability:.2f}",
+                audit_metadata,
+            )
+        elif model_confidence >= (self.CONFIDENCE_THRESHOLD * 0.8) and verifiability < (self.SATYA_FLOOR * 0.8):
+            return RuleResult(
+                self.rule_id,
+                True,
+                KillDecision.WARN,
+                Severity.MEDIUM,
+                f"SATYA_WARNING: confidence-verifiability gap detected (conf={model_confidence:.2f}, verif={verifiability:.2f})",
+                audit_metadata,
+            )
+
+        # Pass — include verification details for audit
+        return RuleResult(self.rule_id, False, KillDecision.PASS, Severity.LOW, "", audit_metadata)
+
+    def _check_with_verifier(self, output: str, context: RtaContext) -> RuleResult:
+        """SATYA check using simple BrahmandaVerifier (pre-2.3 fallback)."""
+        result = self.verifier.verify(output)
+        verifiability = result.overall_confidence
+        model_confidence = self._estimate_confidence(output)
+
+        if model_confidence >= self.CONFIDENCE_THRESHOLD and verifiability < self.SATYA_FLOOR:
+            return RuleResult(
+                self.rule_id,
+                True,
+                KillDecision.KILL,
+                Severity.HIGH,
+                f"SATYA_BREACH: confidence ≥ {self.CONFIDENCE_THRESHOLD} "
+                f"but verifiability = {verifiability:.2f}",
+                {
+                    "model_confidence": model_confidence,
+                    "verifiability": verifiability,
+                    "threshold": self.CONFIDENCE_THRESHOLD,
+                    "claims_checked": len(result.claims),
+                    "contradictions": [c.to_dict() for c in result.claims if c.contradicted],
+                }
+            )
+        elif model_confidence >= (self.CONFIDENCE_THRESHOLD * 0.8) and verifiability < (self.SATYA_FLOOR * 0.8):
+            return RuleResult(
+                self.rule_id,
+                True,
+                KillDecision.WARN,
+                Severity.MEDIUM,
+                f"SATYA_WARNING: confidence-verifiability gap detected",
+                {"model_confidence": model_confidence, "verifiability": verifiability}
+            )
+        return RuleResult(self.rule_id, False, KillDecision.PASS, Severity.LOW, "", {"verifiability": verifiability})
+
+    def _check_heuristic(self, output: str) -> RuleResult:
+        """Heuristic SATYA check when no verifier/pipeline available."""
         if len(output) > 500 and "!" in output:
             return RuleResult(
                 self.rule_id,
@@ -213,13 +289,11 @@ class SatyaRule(RtaRule):
                 "Potential over-confident unverified claim (heuristic)",
                 {"length": len(output), "exclamation_count": output.count("!")}
             )
-
         return RuleResult(self.rule_id, False, KillDecision.PASS, Severity.LOW, "", {})
 
     def _estimate_confidence(self, output: str) -> float:
         """Heuristic to estimate model's confidence from output text.
         Real implementation would get this from the LLM provider's logprobs."""
-        # Simple heuristic: long, assertive sentences, use of superlatives, etc.
         score = 0.5  # baseline
         if len(output) > 100:
             score += 0.1
@@ -940,9 +1014,10 @@ class RtaEngine:
     calculates cumulative metrics (DRIFT, ALIGNMENT), and enforces the cosmic order.
     """
 
-    def __init__(self, config: Optional[GuardConfig] = None, verifier=None):
+    def __init__(self, config: Optional[GuardConfig] = None, verifier=None, pipeline=None):
         self.config = config or GuardConfig()
-        self.verifier = verifier  # BrahmandaVerifier for Satya
+        self.verifier = verifier  # BrahmandaVerifier for Satya (legacy)
+        self.pipeline = pipeline  # VerificationPipeline for Satya (Phase 2.3)
         self.rules: List[RtaRule] = []
         self._initialize_rules()
         self.violation_history: List[dict] = []
@@ -954,7 +1029,7 @@ class RtaEngine:
         self.rules = [
             # Tier 1: Mahāvākyas
             MitraRule(),      # R3 — priority 1
-            SatyaRule(verifier=self.verifier),  # R1 — priority 2 (verifier attached)
+            SatyaRule(verifier=self.verifier, pipeline=self.pipeline),  # R1 — priority 2 (pipeline preferred)
             YamaRule(),       # R2 — priority 3
             AgniRule(),       # R4 — priority 4
             IndraRule(),      # R10 — priority 5

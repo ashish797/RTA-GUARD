@@ -38,6 +38,16 @@ else:
     from brahmanda.verifier import get_seed_verifier
     brahmanda_verifier = get_seed_verifier()
     logger.info("Brahmanda Map: in-memory backend")
+
+# Initialize VerificationPipeline (Phase 2.3)
+try:
+    from brahmanda.pipeline import VerificationPipeline
+    verification_pipeline = VerificationPipeline(brahmanda_verifier)
+    logger.info("VerificationPipeline initialized (Phase 2.3)")
+except ImportError:
+    verification_pipeline = None
+    logger.info("VerificationPipeline not available, using simple verifier")
+
 from dashboard.auth import init_auth, require_auth, AuthConfig, LoginRequest, LoginResponse, get_auth_manager
 
 app = FastAPI(title="RTA-GUARD Dashboard", version="0.1.0")
@@ -49,8 +59,8 @@ auth_config = AuthConfig(
 )
 auth = init_auth(auth_config)
 
-# Initialize RTA engine (draft rules)
-rta_engine = RtaEngine(GuardConfig(log_all=True))
+# Initialize RTA engine with verification pipeline (Phase 2.3)
+rta_engine = RtaEngine(GuardConfig(log_all=True), verifier=brahmanda_verifier, pipeline=verification_pipeline)
 
 # Global guard instance for the dashboard — WITH RTA enabled
 guard = DiscusGuard(GuardConfig(log_all=True), rta_engine=rta_engine)
@@ -162,6 +172,17 @@ class VerifyInput(BaseModel):
 @app.post("/api/brahmanda/verify")
 async def brahmanda_verify(input_data: VerifyInput, auth: bool = Depends(require_auth)):
     """Verify text against the Brahmanda Map (ground truth)."""
+    result = brahmanda_verifier.verify(input_data.text, domain=input_data.domain)
+    return result.to_dict()
+
+
+@app.post("/api/brahmanda/pipeline-verify")
+async def brahmanda_pipeline_verify(input_data: VerifyInput, auth: bool = Depends(require_auth)):
+    """Verify text using the full VerificationPipeline (Phase 2.3)."""
+    if verification_pipeline:
+        result = verification_pipeline.verify(input_data.text, domain=input_data.domain)
+        return result.to_dict()
+    # Fallback to simple verifier
     result = brahmanda_verifier.verify(input_data.text, domain=input_data.domain)
     return result.to_dict()
 
