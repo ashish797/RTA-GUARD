@@ -737,6 +737,83 @@ async def escalation_config(auth: bool = Depends(require_auth)):
     return escalation_chain.config.to_dict()
 
 
+# --- Compliance Reporting endpoints (Phase 4.3) ---
+
+try:
+    from brahmanda.compliance import ReportGenerator, ReportType, ReportFormat, generate_report
+    _compliance_available = True
+except ImportError:
+    _compliance_available = False
+    logger.warning("Compliance module not available")
+
+# Initialize ReportGenerator
+report_generator = None
+if _compliance_available:
+    try:
+        report_generator = ReportGenerator(
+            mutation_tracker=None,  # Wired per-request if available
+            audit_trail=brahmanda_verifier.brahmanda.attribution.audit if hasattr(brahmanda_verifier.brahmanda, 'attribution') else None,
+            conscience_monitor=conscience_monitor,
+            user_tracker=user_tracker,
+        )
+        logger.info("Report Generator initialized (Phase 4.3)")
+    except Exception as e:
+        logger.warning(f"Report Generator init failed: {e}")
+
+
+class ReportGenerateInput(BaseModel):
+    """Input for generating a compliance report."""
+    report_type: str = "eu_ai_act"  # eu_ai_act, soc2, hipaa, custom
+    output_format: str = "json"  # json, markdown, pdf
+    title: Optional[str] = None
+    custom_fields: Optional[dict] = None
+
+
+@app.post("/api/reports/generate")
+async def generate_compliance_report(data: ReportGenerateInput, auth: bool = Depends(require_auth)):
+    """Generate a compliance report."""
+    if not report_generator:
+        return {"error": "Report Generator not available"}
+
+    try:
+        rtype = ReportType(data.report_type)
+    except ValueError:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Invalid report_type: {data.report_type}. Valid: {[r.value for r in ReportType]}")
+
+    try:
+        fmt = ReportFormat(data.output_format)
+    except ValueError:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Invalid output_format: {data.output_format}. Valid: {[f.value for f in ReportFormat]}")
+
+    report = report_generator.generate(
+        report_type=rtype,
+        title=data.title,
+        custom_fields=data.custom_fields,
+    )
+
+    if fmt == ReportFormat.MARKDOWN:
+        from fastapi.responses import Response
+        return Response(content=report.to_markdown(), media_type="text/markdown")
+    elif fmt == ReportFormat.PDF:
+        result = report.to_dict()
+        result["pdf_placeholder"] = True
+        result["pdf_note"] = "PDF generation requires weasyprint or reportlab."
+        return result
+    else:
+        return report.to_dict()
+
+
+@app.get("/api/reports/types")
+async def report_types(auth: bool = Depends(require_auth)):
+    """List available report types and formats."""
+    return {
+        "report_types": [r.value for r in ReportType],
+        "output_formats": [f.value for f in ReportFormat],
+    }
+
+
 @app.post("/api/login")
 async def login(req: LoginRequest):
     """Authenticate with a token. Returns a session ID."""

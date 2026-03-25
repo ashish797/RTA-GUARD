@@ -105,6 +105,27 @@ try:
 except ImportError:
     _RBAC_AVAILABLE = False
 
+# Compliance Reporting (Phase 4.3)
+try:
+    from .compliance import (
+        ComplianceReport,
+        ReportGenerator,
+        ReportType,
+        ReportFormat,
+        RiskLevel,
+        ExecutiveSummary,
+        ViolationsSection,
+        DriftAnalysisSection,
+        TamasSection,
+        AuditTrailSection,
+        UserRiskSection,
+        RecommendationsSection,
+        generate_report,
+    )
+    _COMPLIANCE_AVAILABLE = True
+except ImportError:
+    _COMPLIANCE_AVAILABLE = False
+
 # Qdrant vector backend (optional — requires qdrant-client + openai)
 try:
     from .qdrant_client import QdrantBrahmanda, create_qdrant_seed_map, get_qdrant_verifier
@@ -245,4 +266,22 @@ if _RBAC_AVAILABLE:
         "get_all_permissions",
         "get_rbac_manager",
         "reset_rbac_manager",
+    ])
+
+if _COMPLIANCE_AVAILABLE:
+    __all__.extend([
+        # Phase 4.3
+        "ComplianceReport",
+        "ReportGenerator",
+        "ReportType",
+        "ReportFormat",
+        "RiskLevel",
+        "ExecutiveSummary",
+        "ViolationsSection",
+        "DriftAnalysisSection",
+        "TamasSection",
+        "AuditTrailSection",
+        "UserRiskSection",
+        "RecommendationsSection",
+        "generate_report",
     ])
