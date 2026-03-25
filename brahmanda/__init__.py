@@ -345,3 +345,30 @@ if _WEBHOOKS_AVAILABLE:
         "get_webhook_manager",
         "reset_webhook_manager",
     ])
+
+# Rate Limiting & Quotas (Phase 4.7)
+try:
+    from .rate_limit import (
+        RateLimiter, RateLimitConfig, QuotaConfig, QuotaType,
+        RateLimitResult, QuotaResult, RateLimitStore,
+        RateLimitMiddleware,
+        get_rate_limiter, reset_rate_limiter,
+    )
+    _RATE_LIMIT_AVAILABLE = True
+except ImportError:
+    _RATE_LIMIT_AVAILABLE = False
+
+if _RATE_LIMIT_AVAILABLE:
+    __all__.extend([
+        # Phase 4.7
+        "RateLimiter",
+        "RateLimitConfig",
+        "QuotaConfig",
+        "QuotaType",
+        "RateLimitResult",
+        "QuotaResult",
+        "RateLimitStore",
+        "RateLimitMiddleware",
+        "get_rate_limiter",
+        "reset_rate_limiter",
+    ])

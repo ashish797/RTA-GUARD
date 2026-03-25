@@ -2,6 +2,7 @@
 RTA-GUARD Dashboard — FastAPI Server
 
 Real-time dashboard showing blocked sessions, violations, and events.
+Full OpenAPI documentation available at /docs (Swagger UI) and /redoc (ReDoc).
 """
 import asyncio
 import json
@@ -48,9 +49,104 @@ except ImportError:
     verification_pipeline = None
     logger.info("VerificationPipeline not available, using simple verifier")
 
-from dashboard.auth import init_auth, require_auth, require_auth_with_tenant, require_permission, AuthConfig, LoginRequest, LoginResponse, get_auth_manager, get_sso_auth, require_auth_with_sso
+# Initialize Rate Limiting (Phase 4.7)
+try:
+    from brahmanda.rate_limit import (
+        RateLimiter, RateLimitConfig, QuotaConfig, QuotaType,
+        RateLimitMiddleware, get_rate_limiter, reset_rate_limiter,
+    )
+    _rate_limit_enabled = os.getenv("RATE_LIMIT_ENABLED", "false").lower() == "true"
+    if _rate_limit_enabled:
+        _rl_rpm = int(os.getenv("RATE_LIMIT_RPM", "60"))
+        _rl_rph = int(os.getenv("RATE_LIMIT_RPH", "1000"))
+        _rl_burst = int(os.getenv("RATE_LIMIT_BURST", "10"))
+        _rl_db = os.getenv("RATE_LIMIT_DB_PATH", os.path.join(data_dir, "rate_limits.db"))
+        rate_limiter = get_rate_limiter(
+            config=RateLimitConfig(
+                requests_per_minute=_rl_rpm,
+                requests_per_hour=_rl_rph,
+                burst_size=_rl_burst,
+            ),
+            db_path=_rl_db,
+        )
+        app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
+        logger.info(f"Rate limiting enabled: {_rl_rpm}/min, {_rl_rph}/hr, burst={_rl_burst}")
+    else:
+        rate_limiter = None
+        logger.info("Rate limiting disabled (set RATE_LIMIT_ENABLED=true to enable)")
+except ImportError:
+    rate_limiter = None
+    logger.warning("Rate limiting module not available")
 
-app = FastAPI(title="RTA-GUARD Dashboard", version="0.1.0")
+from dashboard.auth import init_auth, require_auth, require_auth_with_tenant, require_permission, AuthConfig, LoginRequest, LoginResponse, get_auth_manager, get_sso_auth, require_auth_with_sso
+from dashboard.models import (
+    EventsResponse, KilledSessionsResponse, StatsResponse, CheckResponse,
+    ResetResponse, VerifyResponse, BrahmandaStatusResponse,
+    TenantCreateResponse, TenantListResponse, TenantHealthResponse,
+    RoleAssignResponse, RoleRevokeResponse, UserRoleResponse,
+    TenantRolesResponse, RolesListResponse,
+    ConscienceAgentsResponse, AnomalyResponse, DriftComponentsResponse,
+    TemporalConsistencyResponse, EscalationDecisionResponse,
+    ReportTypesResponse, WebhookListResponse, WebhookTestResponse,
+    LoginSuccessResponse, AuthStatusResponse, SSOLoginResponse,
+    SSOCallbackResponse, SSOProvidersResponse, GenericStatusResponse,
+    ErrorResponse,
+)
+
+# API Tags for OpenAPI grouping
+API_TAGS = [
+    {"name": "Guard", "description": "Core guard operations: check inputs, view events, manage sessions"},
+    {"name": "Brahmanda Map", "description": "Ground truth verification and Brahmanda Map status"},
+    {"name": "Tenants", "description": "Multi-tenant management (create, list, delete, health checks)"},
+    {"name": "RBAC", "description": "Role-Based Access Control: assign/revoke roles, check permissions"},
+    {"name": "Conscience", "description": "Agent behavioral profiling, health scores, anomaly detection"},
+    {"name": "Drift", "description": "Live An-Rta drift scoring with component breakdowns"},
+    {"name": "Tamas", "description": "Tamas state detection, history, and recovery scoring"},
+    {"name": "Temporal", "description": "Temporal consistency checks and contradiction detection"},
+    {"name": "User Behavior", "description": "User behavior anomaly detection and risk profiling"},
+    {"name": "Escalation", "description": "Escalation protocol evaluation and decision history"},
+    {"name": "Reports", "description": "Compliance report generation (EU AI Act, SOC2, HIPAA)"},
+    {"name": "Webhooks", "description": "Webhook registration, management, and testing"},
+    {"name": "Auth", "description": "Authentication: login, token auth, SSO integration"},
+    {"name": "SSO", "description": "Single Sign-On providers: OIDC and SAML integration"},
+]
+
+app = FastAPI(
+    title="RTA-GUARD Dashboard API",
+    version="1.0.0",
+    description="""
+## RTA-GUARD — AI Session Kill-Switch
+
+The RTA-GUARD Dashboard API provides real-time monitoring and management
+for AI session safety. It includes:
+
+- **Guard**: Check inputs against 13 RTA rules, view events and killed sessions
+- **Brahmanda Map**: Ground truth verification with vector search
+- **Conscience Monitor**: Behavioral profiling, drift scoring, Tamas detection, temporal consistency
+- **Tenants**: Multi-tenant isolation with per-tenant databases
+- **RBAC**: Role-based access control (Admin, Operator, Viewer, Auditor)
+- **Reports**: EU AI Act, SOC2, HIPAA compliance reports
+- **Webhooks**: Event-driven notifications with HMAC signatures
+- **SSO**: OIDC and SAML single sign-on integration
+
+### Authentication
+
+All endpoints (except `/api/login`, `/api/auth/status`, and `/api/sso/login`)
+require a Bearer token in the `Authorization` header:
+
+```
+Authorization: Bearer <your-api-token>
+```
+
+Set the `DASHBOARD_TOKEN` environment variable, or one will be auto-generated on startup.
+
+### Multi-Tenancy
+
+Pass `X-Tenant-Id` header for tenant-scoped operations, or include `tenant_id`
+in your JWT payload.
+""",
+    openapi_tags=API_TAGS,
+)
 
 # Initialize auth (set DASHBOARD_TOKEN env var, or auto-generates one)
 auth_config = AuthConfig(
@@ -124,7 +220,7 @@ class EventInput(BaseModel):
     input_text: str
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 async def dashboard():
     """Serve the dashboard HTML."""
     html_path = static_dir / "index.html"
@@ -133,7 +229,14 @@ async def dashboard():
     return HTMLResponse(content="<h1>RTA-GUARD Dashboard</h1><p>Dashboard loading...</p>")
 
 
-@app.get("/api/events")
+@app.get(
+    "/api/events",
+    response_model=EventsResponse,
+    tags=["Guard"],
+    summary="Get guard events",
+    description="Retrieve all guard events, optionally filtered by session ID. Returns pass/warn/kill decisions with timestamps.",
+    responses={401: {"model": ErrorResponse, "description": "Authentication failed"}},
+)
 async def get_events(session_id: Optional[str] = None, auth: bool = Depends(require_auth)):
     """Get all events, optionally filtered by session."""
     events = guard.get_events(session_id)
@@ -143,7 +246,14 @@ async def get_events(session_id: Optional[str] = None, auth: bool = Depends(requ
     }
 
 
-@app.get("/api/killed")
+@app.get(
+    "/api/killed",
+    response_model=KilledSessionsResponse,
+    tags=["Guard"],
+    summary="Get killed sessions",
+    description="List all sessions that have been terminated by the guard.",
+    responses={401: {"model": ErrorResponse}},
+)
 async def get_killed_sessions(auth: bool = Depends(require_auth)):
     """Get all killed sessions."""
     killed = guard.get_killed_sessions()
@@ -153,7 +263,14 @@ async def get_killed_sessions(auth: bool = Depends(require_auth)):
     }
 
 
-@app.get("/api/stats")
+@app.get(
+    "/api/stats",
+    response_model=StatsResponse,
+    tags=["Guard"],
+    summary="Get guard statistics",
+    description="Summary statistics: total events, kills, warnings, passes, and violation type breakdown.",
+    responses={401: {"model": ErrorResponse}},
+)
 async def get_stats(auth: bool = Depends(require_auth)):
     """Get summary statistics."""
     events = guard.get_events()
@@ -174,7 +291,16 @@ async def get_stats(auth: bool = Depends(require_auth)):
     }
 
 
-@app.post("/api/check")
+@app.post(
+    "/api/check",
+    response_model=CheckResponse,
+    tags=["Guard"],
+    summary="Check input through guard",
+    description="Run input text through all 13 RTA rules. Returns pass/warn/kill decision. Broadcasts result to WebSocket clients.",
+    responses={
+        401: {"model": ErrorResponse},
+    },
+)
 async def check_input(event_input: EventInput, auth: bool = Depends(require_auth)):
     """Check input text through the guard."""
     try:
@@ -198,7 +324,14 @@ async def check_input(event_input: EventInput, auth: bool = Depends(require_auth
     return result
 
 
-@app.post("/api/reset/{session_id}")
+@app.post(
+    "/api/reset/{session_id}",
+    response_model=ResetResponse,
+    tags=["Guard"],
+    summary="Reset a killed session",
+    description="Reset (unkill) a previously terminated session, allowing it to resume.",
+    responses={401: {"model": ErrorResponse}},
+)
 async def reset_session(session_id: str, auth: bool = Depends(require_auth)):
     """Reset a killed session."""
     guard.reset_session(session_id)
@@ -213,14 +346,28 @@ class VerifyInput(BaseModel):
     domain: str = "general"
 
 
-@app.post("/api/brahmanda/verify")
+@app.post(
+    "/api/brahmanda/verify",
+    response_model=VerifyResponse,
+    tags=["Brahmanda Map"],
+    summary="Verify text against ground truth",
+    description="Verify a text claim against the Brahmanda Map ground truth database using semantic search.",
+    responses={401: {"model": ErrorResponse}},
+)
 async def brahmanda_verify(input_data: VerifyInput, auth: bool = Depends(require_auth)):
     """Verify text against the Brahmanda Map (ground truth)."""
     result = brahmanda_verifier.verify(input_data.text, domain=input_data.domain)
     return result.to_dict()
 
 
-@app.post("/api/brahmanda/pipeline-verify")
+@app.post(
+    "/api/brahmanda/pipeline-verify",
+    response_model=VerifyResponse,
+    tags=["Brahmanda Map"],
+    summary="Verify with full pipeline",
+    description="Verify text using the full VerificationPipeline (Phase 2.3): multi-stage claim→search→cross-verify→verdict flow with 5 contradiction heuristics.",
+    responses={401: {"model": ErrorResponse}},
+)
 async def brahmanda_pipeline_verify(input_data: VerifyInput, auth: bool = Depends(require_auth)):
     """Verify text using the full VerificationPipeline (Phase 2.3)."""
     if verification_pipeline:
@@ -1144,6 +1291,54 @@ async def sso_verify_session(session_id: str):
         return {"valid": True, "user": session}
     from fastapi import HTTPException
     raise HTTPException(status_code=401, detail="Invalid or expired SSO session")
+
+
+# --- Rate Limiting endpoints (Phase 4.7) ---
+
+
+@app.get("/api/rate-limit/status")
+async def rate_limit_status(tenant_id: str = "", auth: bool = Depends(require_auth)):
+    """Get rate limit and quota status for a tenant."""
+    if not rate_limiter:
+        return {"enabled": False, "message": "Rate limiting not configured"}
+    result = {"enabled": True}
+    if tenant_id:
+        result["quotas"] = {
+            k: v.to_dict() for k, v in rate_limiter.get_quota_status(tenant_id).items()
+        }
+    return result
+
+
+@app.post("/api/rate-limit/configure")
+async def rate_limit_configure(
+    tenant_id: str = "",
+    requests_per_minute: int = 60,
+    requests_per_hour: int = 1000,
+    burst_size: int = 10,
+    max_facts_per_day: int = 10000,
+    max_agents: int = 100,
+    max_webhooks: int = 50,
+    auth: bool = Depends(require_auth),
+):
+    """Configure per-tenant rate limits and quotas."""
+    if not rate_limiter:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Rate limiting not configured")
+    if not tenant_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    rl_config = RateLimitConfig(
+        requests_per_minute=requests_per_minute,
+        requests_per_hour=requests_per_hour,
+        burst_size=burst_size,
+    )
+    q_config = QuotaConfig(
+        max_facts_per_day=max_facts_per_day,
+        max_agents=max_agents,
+        max_webhooks=max_webhooks,
+    )
+    rate_limiter.configure_tenant(tenant_id, rate_limit=rl_config, quota=q_config)
+    return {"status": "configured", "tenant_id": tenant_id, "rate_limit": rl_config.to_dict(), "quota": q_config.to_dict()}
 
 
 @app.websocket("/ws")
