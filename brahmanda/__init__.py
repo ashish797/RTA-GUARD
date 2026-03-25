@@ -33,6 +33,15 @@ try:
 except ImportError:
     _CONFIDENCE_AVAILABLE = False
 
+# Mutation tracking (Phase 2.6)
+try:
+    from .mutation import (
+        MutationTracker, Mutation, compute_diff,
+    )
+    _MUTATION_AVAILABLE = True
+except ImportError:
+    _MUTATION_AVAILABLE = False
+
 # Qdrant vector backend (optional — requires qdrant-client + openai)
 try:
     from .qdrant_client import QdrantBrahmanda, create_qdrant_seed_map, get_qdrant_verifier
@@ -92,4 +101,11 @@ if _QDRANT_AVAILABLE:
         "QdrantBrahmanda",
         "create_qdrant_seed_map",
         "get_qdrant_verifier",
+    ])
+
+if _MUTATION_AVAILABLE:
+    __all__.extend([
+        "MutationTracker",
+        "Mutation",
+        "compute_diff",
     ])

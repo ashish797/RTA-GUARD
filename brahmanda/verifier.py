@@ -20,6 +20,7 @@ from .models import (
 from .extractor import extract_claims, ExtractedClaim
 from .attribution import AttributionManager
 from .confidence import ConfidenceScorer, ConfidenceExplanation, ConfidenceLevel
+from .mutation import MutationTracker
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +236,7 @@ class BrahmandaMap:
         self._normalized_index: Dict[str, str] = {}
         self._fact_count = 0
         self.attribution = attribution or AttributionManager()
+        self.mutation_tracker = MutationTracker(attribution_manager=self.attribution)
 
     def add_fact(
         self,
@@ -282,6 +284,13 @@ class BrahmandaMap:
 
         # Link fact to source via provenance tracker
         self.attribution.link_fact(fact.id, source.id)
+
+        # Mutation tracking: record creation
+        self.mutation_tracker.track_creation(
+            fact=fact,
+            source_name=source.name,
+            reason="Fact created",
+        )
 
         return fact
 
@@ -354,18 +363,37 @@ class BrahmandaMap:
         # Audit trail
         self.attribution.log_fact_update(new_fact, before=before)
 
+        # Mutation tracking: record update with diff
+        self.mutation_tracker.track_update(
+            fact_id=fact_id,
+            old_value=before,
+            new_value=new_fact.to_dict(),
+            reason=kwargs.get("reason", "Fact updated"),
+        )
+
         return new_fact
 
     def retract_fact(self, fact_id: str, reason: str = "") -> bool:
         fact = self._facts.get(fact_id)
         if not fact:
             return False
+
+        # Capture snapshot before retraction
+        before_snapshot = fact.to_dict()
+
         fact.confidence = 0.0
         fact.metadata["retracted"] = True
         fact.metadata["retraction_reason"] = reason
 
         # Audit trail
         self.attribution.log_fact_retract(fact_id, reason)
+
+        # Mutation tracking: record retraction
+        self.mutation_tracker.track_retraction(
+            fact_id=fact_id,
+            reason=reason,
+            fact_snapshot=before_snapshot,
+        )
 
         return True
 
@@ -376,6 +404,13 @@ class BrahmandaMap:
             if fact.is_expired() and not fact.metadata.get("expiration_logged"):
                 fact.metadata["expiration_logged"] = True
                 self.attribution.log_expiration(fact)
+
+                # Mutation tracking: record expiration
+                self.mutation_tracker.track_expiration(
+                    fact_id=fact.id,
+                    fact_snapshot=fact.to_dict(),
+                )
+
                 expired.append(fact)
         return expired
 
