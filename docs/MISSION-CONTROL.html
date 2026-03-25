@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RTA-GUARD Mission Control</title>
+    <style>
+        /* ... (same CSS as before) ... */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'SF Mono', 'Consolas', 'Monaco', monospace; background: #050505; color: #e0e0e0; }
+        .header {
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 100%);
+            padding: 40px 30px;
+            border-bottom: 2px solid #e94560;
+            text-align: center;
+        }
+        .header h1 { font-size: 2em; color: #e94560; margin-bottom: 10px; }
+        .header .subtitle { color: #4ecdc4; font-size: 1.2em; margin-bottom: 5px; }
+        .header .tagline { color: #888; font-size: 0.95em; }
+        .status-badge {
+            display: inline-block;
+            padding: 8px 20px;
+            background: #00ff8833;
+            color: #00ff88;
+            border: 1px solid #00ff88;
+            border-radius: 20px;
+            margin-top: 15px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        .live { background: #e9456033; color: #e94560; border-color: #e94560; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 30px; }
+        .section { margin-bottom: 40px; }
+        .section-title {
+            color: #4ecdc4;
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #333;
+        }
+        .phase { margin-bottom: 25px; }
+        .phase-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .phase-icon {
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            margin-right: 15px; font-weight: bold;
+        }
+        .phase-icon.done { background: #00ff88; color: #0a0a0a; }
+        .phase-icon.current { background: #4ecdc4; color: #0a0a0a; animation: pulse 2s infinite; }
+        .phase-icon.todo { background: #333; color: #888; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .phase-title { font-size: 1.1em; font-weight: bold; }
+        .phase-title .status {
+            font-size: 0.8em; padding: 3px 10px; border-radius: 4px;
+            margin-left: 10px; vertical-align: middle;
+        }
+        .status.done { background: #00ff8822; color: #00ff88; }
+        .status.current { background: #4ecdc422; color: #4ecdc4; }
+        .status.todo { background: #333; color: #888; }
+        .phase-description { color: #ccc; margin-bottom: 10px; font-size: 0.9em; line-height: 1.5; }
+        .phase-status { color: #888; font-size: 0.85em; margin-top: 5px; }
+        .progress-bar {
+            height: 4px; background: #333; border-radius: 2px; overflow: hidden; margin: 15px 0;
+        }
+        .progress-fill { height: 100%; background: #4ecdc4; transition: width 0.5s ease; }
+        .progress-fill.done { background: #00ff88; }
+        .tasks { margin-left: 45px; font-size: 0.85em; color: #aaa; }
+        .tasks ul { list-style: none; padding-left: 0; }
+        .tasks li {
+            padding: 5px 0; border-bottom: 1px dashed #222;
+        }
+        .tasks li:last-child { border-bottom: none; }
+        .tasks .check { color: #00ff88; margin-right: 8px; }
+        .tasks .pending { color: #555; margin-right: 8px; }
+        .highlight-box {
+            background: #1a1a2e; border: 1px solid #333; border-radius: 8px; padding: 20px; margin: 20px 0;
+        }
+        .highlight-box h4 { color: #4ecdc4; margin-bottom: 10px; }
+        .highlight-box p { color: #ccc; line-height: 1.6; }
+        .timeline-bar {
+            display: flex; align-items: center; margin: 30px 0; padding: 20px; background: #1a1a2e; border-radius: 8px;
+        }
+        .timeline-step {
+            flex: 1; text-align: center; padding: 10px; position: relative;
+        }
+        .timeline-step:not(:last-child)::after {
+            content: ''; position: absolute; right: -50%; top: 50%;
+            width: 100%; height: 2px; background: #333; z-index: 0;
+        }
+        .timeline-step.active { color: #4ecdc4; font-weight: bold; }
+        .timeline-step .number {
+            display: inline-block; width: 24px; height: 24px; border-radius: 50%;
+            background: #333; color: #888; line-height: 24px; font-size: 0.8em; margin-bottom: 5px;
+        }
+        .timeline-step.active .number { background: #4ecdc4; color: #0a0a0a; }
+        .timeline-step .label { font-size: 0.85em; color: #aaa; }
+        .footer {
+            text-align: center; padding: 40px; color: #555; font-size: 0.85em;
+            border-top: 1px solid #222; margin-top: 40px;
+        }
+        .footer a { color: #4ecdc4; text-decoration: none; }
+        .footer a:hover { color: #00ff88; }
+        .update-timestamp {
+            text-align: center; color: #666; font-size: 0.8em; margin-top: 20px;
+        }
+        .stat-cards {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0;
+        }
+        .stat-card {
+            background: #1a1a2e; border: 1px solid #333; border-radius: 8px; padding: 20px; text-align: center;
+        }
+        .stat-card .number { font-size: 2em; font-weight: bold; color: #4ecdc4; }
+        .stat-card .label { font-size: 0.85em; color: #888; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="subtitle">RTA-GUARD</div>
+        <h1>Mission Control</h1>
+        <p class="tagline">Cosmic Order for AI — Progress Tracker</p>
+        <span class="status-badge live">● LIVE</span>
+    </div>
+
+    <div class="container">
+        <div class="section">
+            <div class="section-title">Current Status</div>
+            <div class="stat-cards">
+                <div class="stat-card">
+                    <div class="number">0</div>
+                    <div class="label">Current Phase</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">0/7</div>
+                    <div class="label">Phases Complete</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">0</div>
+                    <div class="label">Key Milestones Done</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Mission Timeline</div>
+            <div class="timeline-bar">
+
+                <div class="timeline-step active" data-phase="0">
+                    <div class="number">0</div>
+                    <div class="label">Kill-Switch<br>MVP</div>
+                </div>
+
+                <div class="timeline-step " data-phase="1">
+                    <div class="number">1</div>
+                    <div class="label">RTA Rules<br>Engine</div>
+                </div>
+
+                <div class="timeline-step " data-phase="2">
+                    <div class="number">2</div>
+                    <div class="label">Brahmanda<br>Map</div>
+                </div>
+
+                <div class="timeline-step " data-phase="3">
+                    <div class="number">3</div>
+                    <div class="label">Conscience<br>Monitor</div>
+                </div>
+
+                <div class="timeline-step " data-phase="4">
+                    <div class="number">4</div>
+                    <div class="label">Enterprise<br>Features</div>
+                </div>
+
+                <div class="timeline-step " data-phase="5">
+                    <div class="number">5</div>
+                    <div class="label">Sudarshan<br>Wasm</div>
+                </div>
+
+                <div class="timeline-step " data-phase="6">
+                    <div class="number">6</div>
+                    <div class="label">Ecosystem<br>& Scale</div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Phase Breakdown</div>
+
+            <!-- Phase 0 -->
+            <div class="phase" data-phase="0">
+                <div class="phase-header">
+                    <div class="phase-icon todo">○</div>
+                    <div class="phase-title">Phase 0 — Kill-Switch MVP <span class="status todo">NOT STARTED</span></div>
+                </div>
+                <div class="phase-description">Built the Sudarshan Firewall — a working session terminator with pattern-based detection, dashboard, LLM integration, and real-time monitoring.</div>
+                <div class="progress-bar"><div class="progress-fill todo" style="width: 0%"></div></div>
+                <div class="phase-status">
+                    🔄 Not started — blocked on earlier phases
+                </div>
+                <div class="tasks">
+                    <ul>
+                        <li><span class="check">✓</span>DiscusGuard core engine</li>
+                        <li><span class="check">✓</span>Pattern-based rule detection</li>
+                        <li><span class="check">✓</span>FastAPI dashboard with WebSocket</li>
+                        <li><span class="check">✓</span>Token-based authentication</li>
+                        <li><span class="check">✓</span>LLM providers (OpenAI, Anthropic, compatible)</li>
+                        <li><span class="check">✓</span>NeMo Guardrails integration</li>
+                        <li><span class="check">✓</span>Demo apps (CLI, real LLM, hybrid)</li>
+                        <li><span class="check">✓</span>Docker packaging</li>
+                        <li><span class="check">✓</span>Tests (11/11 passing)</li>
+                        <li><span class="check">✓</span>Showcase page published</li>
+
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Phase 1 -->
+            <div class="phase" data-phase="1">
+                <div class="phase-header">
+                    <div class="phase-icon todo">○</div>
+                    <div class="phase-title">Phase 1 — RTA Rules Engine <span class="status todo">NOT STARTED</span></div>
+                </div>
+                <div class="phase-description">Replace pattern-based rules with Vedic principle-based governance. Implement R1-R13 from the Rig Veda: Satya (Truth), Yama (Boundaries), Mitra (Trust), Agni (Transparency), Dharma (Duty), Varuna (Binding), Sarasvati (Knowledge Purity), Vayu (Health), Indra (Restraint), Drift Scoring, Maya Detection, Tamas Protocol.</div>
+                <div class="progress-bar"><div class="progress-fill todo" style="width: 0%"></div></div>
+                <div class="phase-status">
+                    🔄 RTA Ruleset documented | Saurabh enhancing with Claude Code | RtaEngine implementation starting
+                </div>
+                <div class="tasks">
+                    <ul>
+                        <li><span class="check">✓</span>Research Vedic principles</li>
+                        <li><span class="check">✓</span>Codify 13 rules (R1-R13) in documentation</li>
+                        <li><span class="pending">○</span>Enhance with verse-level references (Claude Code)</li>
+                        <li><span class="pending">○</span>Implement RtaEngine (Python)</li>
+                        <li><span class="pending">○</span>An-Rta drift scoring system</li>
+                        <li><span class="pending">○</span>Rule priority & conflict resolution</li>
+                        <li><span class="pending">○</span>Temporal consistency check (R7)</li>
+                        <li><span class="pending">○</span>Hallucination scoring (R12)</li>
+                        <li><span class="pending">○</span>Health monitoring (R9)</li>
+
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Phase 2 -->
+            <div class="phase" data-phase="2">
+                <div class="phase-header">
+                    <div class="phase-icon todo">○</div>
+                    <div class="phase-title">Phase 2 — Brahmanda Map (Ground Truth) <span class="status todo">NOT STARTED</span></div>
+                </div>
+                <div class="phase-description">Build the ground truth database. AI must verify its 'thoughts' against verified reality before speaking. Anti-hallucination at the source.</div>
+                <div class="progress-bar"><div class="progress-fill todo" style="width: 0%"></div></div>
+                <div class="phase-status">
+                    🔄 Not started — blocked on earlier phases
+                </div>
+                <div class="tasks">
+                    <ul>
+                        <li><span class="pending">○</span>Design ground truth schema</li>
+                        <li><span class="pending">○</span>Knowledge base architecture (vector/graph DB)</li>
+                        <li><span class="pending">○</span>Truth verification pipeline</li>
+                        <li><span class="pending">○</span>Source attribution system</li>
+                        <li><span class="pending">○</span>Confidence scoring</li>
+                        <li><span class="pending">○</span>Knowledge base mutation tracking</li>
+
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Phase 3 -->
+            <div class="phase" data-phase="3">
+                <div class="phase-header">
+                    <div class="phase-icon todo">○</div>
+                    <div class="phase-title">Phase 3 — Conscience Monitor <span class="status todo">NOT STARTED</span></div>
+                </div>
+                <div class="phase-description">Persistent behavioral tracking over time. Measures drift, detects Tamas (darkness), maintains temporal consistency. The long-term watchfulness.</div>
+                <div class="progress-bar"><div class="progress-fill todo" style="width: 0%"></div></div>
+                <div class="phase-status">
+                    🔄 Not started — blocked on earlier phases
+                </div>
+                <div class="tasks">
+                    <ul>
+                        <li><span class="pending">○</span>Session behavioral profiling</li>
+                        <li><span class="pending">○</span>Live An-Rta drift scoring</li>
+                        <li><span class="pending">○</span>Tamas detection protocol</li>
+                        <li><span class="pending">○</span>Temporal consistency enforcement (R7)</li>
+                        <li><span class="pending">○</span>User behavior anomaly detection</li>
+                        <li><span class="pending">○</span>Escalation protocols (throttle → human → kill)</li>
+
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Phase 4 -->
+            <div class="phase" data-phase="4">
+                <div class="phase-header">
+                    <div class="phase-icon todo">○</div>
+                    <div class="phase-title">Phase 4 — Enterprise Features <span class="status todo">NOT STARTED</span></div>
+                </div>
+                <div class="phase-description">Make RTA-GUARD production-ready for enterprise: multi-tenant, RBAC, compliance reporting, webhooks, SSO, rate limiting, SLA monitoring.</div>
+                <div class="progress-bar"><div class="progress-fill todo" style="width: 0%"></div></div>
+                <div class="phase-status">
+                    🔄 Not started — blocked on earlier phases
+                </div>
+                <div class="tasks">
+                    <ul>
+                        <li><span class="pending">○</span>Multi-tenant isolation</li>
+                        <li><span class="pending">○</span>RBAC (admin, operator, viewer)</li>
+                        <li><span class="pending">○</span>Compliance reporting (EU AI Act, SOC2, HIPAA)</li>
+                        <li><span class="pending">○</span>Webhook notifications</li>
+                        <li><span class="pending">○</span>SSO integration (SAML, OIDC)</li>
+                        <li><span class="pending">○</span>API documentation (OpenAPI spec)</li>
+                        <li><span class="pending">○</span>Rate limiting & quotas</li>
+                        <li><span class="pending">○</span>SLA monitoring & uptime tracking</li>
+
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Phase 5 -->
+            <div class="phase" data-phase="5">
+                <div class="phase-header">
+                    <div class="phase-icon todo">○</div>
+                    <div class="phase-title">Phase 5 — Sudarshan Wasm Module <span class="status todo">NOT STARTED</span></div>
+                </div>
+                <div class="phase-description">Compile the kill-switch engine to WebAssembly. Embeddable anywhere: browser extensions, server middleware, CLI wrappers. Language-agnostic runtime.</div>
+                <div class="progress-bar"><div class="progress-fill todo" style="width: 0%"></div></div>
+                <div class="phase-status">
+                    🔄 Not started — blocked on earlier phases
+                </div>
+                <div class="tasks">
+                    <ul>
+                        <li><span class="pending">○</span>Rewrite core in Rust/C</li>
+                        <li><span class="pending">○</span>Wasm compilation pipeline</li>
+                        <li><span class="pending">○</span>Browser injection support</li>
+                        <li><span class="pending">○</span>WASI system integration</li>
+                        <li><span class="pending">○</span>Multi-language bindings (Python, JS, Go, etc.)</li>
+                        <li><span class="pending">○</span>Performance optimization</li>
+
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Phase 6 -->
+            <div class="phase" data-phase="6">
+                <div class="phase-header">
+                    <div class="phase-icon todo">○</div>
+                    <div class="phase-title">Phase 6 — Ecosystem & Scale <span class="status todo">NOT STARTED</span></div>
+                </div>
+                <div class="phase-description">Open-source the core, build plugin system, integrations with major AI frameworks (NeMo, Bedrock, LangChain), community rule marketplace, full documentation.</div>
+                <div class="progress-bar"><div class="progress-fill todo" style="width: 0%"></div></div>
+                <div class="phase-status">
+                    🔄 Not started — blocked on earlier phases
+                </div>
+                <div class="tasks">
+                    <ul>
+                        <li><span class="pending">○</span>Open-source release (Apache 2.0)</li>
+                        <li><span class="pending">○</span>Plugin architecture</li>
+                        <li><span class="pending">○</span>Framework integrations (NeMo, Bedrock, LangChain)</li>
+                        <li><span class="pending">○</span>Rule marketplace</li>
+                        <li><span class="pending">○</span>Industry-specific rule packs</li>
+                        <li><span class="pending">○</span>Full documentation site</li>
+                        <li><span class="pending">○</span>CI/CD integration (GitHub Actions)</li>
+                        <li><span class="pending">○</span>Community governance</li>
+
+                    </ul>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="section">
+            <div class="section-title">What's Happening Now</div>
+            <div class="highlight-box">
+                <h4>🎯 Current Mission: Phase 1 — RTA Rules Engine</h4>
+                <p>
+                    <strong>What:</strong> Codifying the 13 Vedic laws (R1-R13) into Python code.<br>
+                    <strong>Blocking:</strong> Awaiting enhanced ruleset from Claude Code research.<br>
+                    <strong>Next:</strong> Once we have the finalized rules, we'll implement <code>RtaEngine</code> that replaces the pattern-based detection with principle-based governance.
+                </p>
+            </div>
+            <div class="highlight-box">
+                <h4>📊 Real-Time Dashboard</h4>
+                <p>
+                    The technical dashboard (localhost:8000) shows live kills, warnings, and passes. The Mission Control page you're viewing now is the <em>public progress tracker</em> — updated after each commit.
+                </p>
+            </div>
+        </div>
+
+        <div class="update-timestamp">
+            Last updated: <span id="last-updated">2026-03-26 00:30 IST</span><br>
+            Repository: <a href="https://github.com/ashish797/RTA-GUARD" target="_blank">github.com/ashish797/RTA-GUARD</a> (pending push)<br>
+            Generated by: update_mission_control.py
+        </div>
+
+        <div class="footer">
+            RTA-GUARD — The Seatbelt for AI<br>
+            "NeMo guards the prompts. RTA-GUARD kills the session."
+        </div>
+    </div>
+
+    <script>
+        // Timeline highlight for current phase
+        const currentPhase = 0;
+        document.querySelectorAll('.timeline-step').forEach((step, idx) => {
+            if (idx < currentPhase) {
+                step.classList.add('active');
+                step.querySelector('.number').style.background = '#00ff88';
+                step.querySelector('.number').style.color = '#0a0a0a';
+            }
+        });
+        document.getElementById('phase-num').textContent = currentPhase;
+        document.getElementById('complete-phases').textContent = '0/7';
+        document.getElementById('total-tasks-complete').textContent = '0';
+    </script>
+</body>
+</html>
