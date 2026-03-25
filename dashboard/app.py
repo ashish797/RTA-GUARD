@@ -5,11 +5,12 @@ Real-time dashboard showing blocked sessions, violations, and events.
 """
 import asyncio
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -17,8 +18,16 @@ from pydantic import BaseModel
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from discus import DiscusGuard, GuardConfig
+from dashboard.auth import init_auth, require_auth, AuthConfig, LoginRequest, LoginResponse, get_auth_manager
 
 app = FastAPI(title="RTA-GUARD Dashboard", version="0.1.0")
+
+# Initialize auth (set DASHBOARD_TOKEN env var, or auto-generates one)
+auth_config = AuthConfig(
+    enabled=os.getenv("DASHBOARD_AUTH", "true").lower() == "true",
+    api_token=os.getenv("DASHBOARD_TOKEN")
+)
+auth = init_auth(auth_config)
 
 # Global guard instance for the dashboard
 guard = DiscusGuard(GuardConfig(log_all=True))
@@ -48,7 +57,7 @@ async def dashboard():
 
 
 @app.get("/api/events")
-async def get_events(session_id: Optional[str] = None):
+async def get_events(session_id: Optional[str] = None, auth: bool = Depends(require_auth)):
     """Get all events, optionally filtered by session."""
     events = guard.get_events(session_id)
     return {
@@ -58,7 +67,7 @@ async def get_events(session_id: Optional[str] = None):
 
 
 @app.get("/api/killed")
-async def get_killed_sessions():
+async def get_killed_sessions(auth: bool = Depends(require_auth)):
     """Get all killed sessions."""
     killed = guard.get_killed_sessions()
     return {
@@ -68,7 +77,7 @@ async def get_killed_sessions():
 
 
 @app.get("/api/stats")
-async def get_stats():
+async def get_stats(auth: bool = Depends(require_auth)):
     """Get summary statistics."""
     events = guard.get_events()
     kills = [e for e in events if e.decision.value == "kill"]
@@ -89,7 +98,7 @@ async def get_stats():
 
 
 @app.post("/api/check")
-async def check_input(event_input: EventInput):
+async def check_input(event_input: EventInput, auth: bool = Depends(require_auth)):
     """Check input text through the guard."""
     try:
         response = guard.check(event_input.input_text, event_input.session_id)
@@ -113,10 +122,36 @@ async def check_input(event_input: EventInput):
 
 
 @app.post("/api/reset/{session_id}")
-async def reset_session(session_id: str):
+async def reset_session(session_id: str, auth: bool = Depends(require_auth)):
     """Reset a killed session."""
     guard.reset_session(session_id)
     return {"status": "ok", "session_id": session_id}
+
+
+# --- Auth endpoints ---
+
+@app.post("/api/login")
+async def login(req: LoginRequest):
+    """Authenticate with a token. Returns a session ID."""
+    auth_mgr = get_auth_manager()
+    if auth_mgr.verify_token(req.token):
+        session_id = auth_mgr.create_session()
+        return LoginResponse(
+            session_id=session_id,
+            expires_in=auth_mgr.config.session_ttl
+        )
+    from fastapi import HTTPException
+    raise HTTPException(status_code=401, detail="Invalid token")
+
+
+@app.get("/api/auth/status")
+async def auth_status():
+    """Check if auth is enabled."""
+    auth_mgr = get_auth_manager()
+    return {
+        "enabled": auth_mgr.config.enabled,
+        "token_set": auth_mgr._token is not None
+    }
 
 
 @app.websocket("/ws")
