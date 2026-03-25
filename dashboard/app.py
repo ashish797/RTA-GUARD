@@ -73,8 +73,17 @@ except Exception as e:
     conscience_monitor = None
     logger.warning(f"Conscience Monitor init failed: {e}")
 
+# Initialize User Behavior Tracker (Phase 3.5)
+try:
+    from brahmanda.user_monitor import UserBehaviorTracker
+    user_tracker = UserBehaviorTracker()
+    logger.info("User Behavior Tracker initialized (Phase 3.5)")
+except Exception as e:
+    user_tracker = None
+    logger.warning(f"User Behavior Tracker init failed: {e}")
+
 # Global guard instance for the dashboard — WITH RTA enabled
-guard = DiscusGuard(GuardConfig(log_all=True), rta_engine=rta_engine)
+guard = DiscusGuard(GuardConfig(log_all=True), rta_engine=rta_engine, user_tracker=user_tracker)
 
 # Connected websocket clients
 connected_clients: list[WebSocket] = []
@@ -429,6 +438,59 @@ async def conscience_temporal_contradictions(
     if not conscience_monitor:
         return {"error": "Conscience Monitor not available"}
     return conscience_monitor.get_contradiction_history(agent_id)
+
+
+# --- User Behavior Anomaly Detection endpoints (Phase 3.5) ---
+
+@app.get("/api/conscience/users/{user_id}")
+async def conscience_user_risk(user_id: str, auth: bool = Depends(require_auth)):
+    """Get risk profile for a specific user."""
+    if not user_tracker:
+        return {"error": "User Behavior Tracker not available"}
+    profile = user_tracker.get_user_profile(user_id)
+    if not profile:
+        return {"error": "User not found", "user_id": user_id}
+    risk_score = user_tracker.get_user_risk_score(user_id)
+    return {
+        **profile.to_dict(),
+        "is_adversarial": user_tracker.is_adversarial(user_id),
+    }
+
+
+@app.get("/api/conscience/users/{user_id}/history")
+async def conscience_user_risk_history(user_id: str, auth: bool = Depends(require_auth)):
+    """Get risk score history and trend for a user."""
+    if not user_tracker:
+        return {"error": "User Behavior Tracker not available"}
+    return user_tracker.get_risk_history(user_id)
+
+
+@app.get("/api/conscience/users/{user_id}/signals")
+async def conscience_user_signals(user_id: str, auth: bool = Depends(require_auth)):
+    """Get current anomaly signals for a user."""
+    if not user_tracker:
+        return {"error": "User Behavior Tracker not available"}
+    signals = user_tracker.analyze_behavior(user_id)
+    return {
+        "user_id": user_id,
+        "signals": [s.to_dict() for s in signals],
+        "total": len(signals),
+        "is_adversarial": user_tracker.is_adversarial(user_id),
+        "risk_score": user_tracker.get_user_risk_score(user_id),
+    }
+
+
+@app.get("/api/conscience/user-tracker/list")
+async def conscience_user_list(auth: bool = Depends(require_auth)):
+    """List all tracked users with risk scores (sorted by risk desc)."""
+    if not user_tracker:
+        return {"error": "User Behavior Tracker not available", "users": []}
+    users = user_tracker.list_users()
+    return {
+        "users": users,
+        "total": len(users),
+    }
+
 
 @app.post("/api/login")
 async def login(req: LoginRequest):

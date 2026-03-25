@@ -64,6 +64,16 @@ try:
 except ImportError:
     _CONSCIENCE_AVAILABLE = False
 
+# User behavior anomaly detection (Phase 3.5)
+try:
+    from .user_monitor import (
+        UserBehaviorTracker, UserBehaviorProfile, AnomalySignal,
+        AnomalyCategory, RiskLevel, get_tracker,
+    )
+    _USER_MONITOR_AVAILABLE = True
+except ImportError:
+    _USER_MONITOR_AVAILABLE = False
+
 # Qdrant vector backend (optional — requires qdrant-client + openai)
 try:
     from .qdrant_client import QdrantBrahmanda, create_qdrant_seed_map, get_qdrant_verifier
@@ -159,4 +169,15 @@ if _CONSCIENCE_AVAILABLE:
         "classify_consistency",
         "Statement",
         "ContradictionPair",
+    ])
+
+if _USER_MONITOR_AVAILABLE:
+    __all__.extend([
+        # Phase 3.5
+        "UserBehaviorTracker",
+        "UserBehaviorProfile",
+        "AnomalySignal",
+        "AnomalyCategory",
+        "RiskLevel",
+        "get_tracker",
     ])

@@ -44,26 +44,43 @@ class DiscusGuard:
             print(f"Blocked: {e.event.details}")
     """
 
-    def __init__(self, config: Optional[GuardConfig] = None, rta_engine: Optional[RtaEngine] = None):
+    def __init__(self, config: Optional[GuardConfig] = None, rta_engine: Optional[RtaEngine] = None,
+                 user_tracker: Optional[Any] = None):
         self.config = config or GuardConfig()
         self.rule_engine = RuleEngine(self.config)
         self.rta_engine = rta_engine  # RTA constitutional engine (optional)
+        self.user_tracker = user_tracker  # UserBehaviorTracker (optional, Phase 3.5)
         self._event_log: list[SessionEvent] = []
         self._on_kill_callbacks: list[Callable] = []
         self._killed_sessions: set[str] = set()
-        logger.info("DiscusGuard initialized" + (" with RTA" if rta_engine else ""))
+        logger.info("DiscusGuard initialized" + (" with RTA" if rta_engine else "")
+                     + (" with user tracking" if user_tracker else ""))
 
     def on_kill(self, callback: Callable[[SessionEvent], None]):
         """Register a callback for when a session is killed."""
         self._on_kill_callbacks.append(callback)
 
-    def check(self, text: str, session_id: str = "default") -> GuardResponse:
+    def check(self, text: str, session_id: str = "default", user_id: str = "") -> GuardResponse:
         """
         Check input text against all rules.
 
         Returns GuardResponse with allowed=True/False.
         Raises SessionKilledError if kill threshold is met.
         """
+        # Phase 3.5: User behavior tracking — record before processing
+        user_signals = []
+        user_risk_kill = False
+        if self.user_tracker and user_id:
+            try:
+                user_signals = self.user_tracker.record_request(user_id, text)
+                # Check if user is adversarial — factor into kill decision
+                if self.user_tracker.is_adversarial(user_id):
+                    user_risk_kill = True
+                    logger.warning(f"⚠️ Adversarial user detected: {user_id} "
+                                   f"(risk={self.user_tracker.get_user_risk_score(user_id):.2f})")
+            except Exception as e:
+                logger.debug(f"User tracker error: {e}")
+
         # Check if session is already killed
         if session_id in self._killed_sessions:
             event = SessionEvent(
@@ -169,6 +186,27 @@ class DiscusGuard:
                         message=f"RTA Warning: {details}"
                     )
 
+        # Phase 3.5: Kill session if user is adversarial and has injection signals
+        if user_risk_kill and user_signals:
+            injection_signals = [s for s in user_signals if s.category.value == "injection_attempt"]
+            if injection_signals:
+                details = (f"Adversarial user {user_id}: "
+                           f"risk={self.user_tracker.get_user_risk_score(user_id):.2f}, "
+                           f"{len(injection_signals)} injection signal(s)")
+                event = SessionEvent(
+                    session_id=session_id,
+                    input_text=text[:200],
+                    violation_type=ViolationType.PROMPT_INJECTION,
+                    severity=Severity.HIGH,
+                    decision=KillDecision.KILL,
+                    details=details,
+                )
+                self._log_event(event)
+                self._killed_sessions.add(session_id)
+                self._fire_on_kill(event)
+                logger.warning(f"🛑 SESSION KILLED (adversarial user) [{session_id}]: {details}")
+                raise SessionKilledError(event)
+
         # No violations — pass
         event = SessionEvent(
             session_id=session_id,
@@ -184,6 +222,7 @@ class DiscusGuard:
         self,
         text: str,
         session_id: str = "default",
+        user_id: str = "",
         llm_fn: Optional[Callable[[str], str]] = None
     ) -> str:
         """
@@ -192,6 +231,7 @@ class DiscusGuard:
         Args:
             text: User input
             session_id: Session identifier
+            user_id: User identifier (for behavior tracking)
             llm_fn: Function that calls the LLM (takes text, returns response)
 
         Returns:
@@ -200,7 +240,7 @@ class DiscusGuard:
         Raises:
             SessionKilledError if violation detected
         """
-        self.check(text, session_id)
+        self.check(text, session_id, user_id=user_id)
 
         if llm_fn:
             return llm_fn(text)
