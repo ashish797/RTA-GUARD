@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  dashboard:
+    build: .
+    ports:
+      - "8000:8000"
+    command: python -m dashboard.app
+    volumes:
+      - ./discus:/app/discus
+      - ./dashboard:/app/dashboard
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  demo:
+    build: .
+    command: python demo/chat_demo.py
+    volumes:
+      - ./discus:/app/discus
+      - ./demo:/app/demo
+    environment:
+      - PYTHONUNBUFFERED=1
+    stdin_open: true
+    tty: true

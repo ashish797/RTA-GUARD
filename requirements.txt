@@ -1,0 +1,11 @@
+nemo-guardrails>=0.7.0
+fastapi>=0.104.0
+uvicorn>=0.24.0
+sqlalchemy>=2.0
+aiosqlite>=0.19.0
+pydantic>=2.0
+pyyaml>=6.0
+rich>=13.0
+websockets>=12.0
+httpx>=0.25.0
+openai>=1.0
