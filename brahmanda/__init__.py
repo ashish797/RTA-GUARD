@@ -56,6 +56,10 @@ try:
         TamasDetector, TamasState, TamasEvent,
         EscalationAction, TamasStore,
     )
+    from .temporal import (
+        TemporalConsistencyChecker, ConsistencyLevel,
+        classify_consistency, Statement, ContradictionPair,
+    )
     _CONSCIENCE_AVAILABLE = True
 except ImportError:
     _CONSCIENCE_AVAILABLE = False
@@ -149,4 +153,10 @@ if _CONSCIENCE_AVAILABLE:
         "TamasEvent",
         "EscalationAction",
         "TamasStore",
+        # Phase 3.4
+        "TemporalConsistencyChecker",
+        "ConsistencyLevel",
+        "classify_consistency",
+        "Statement",
+        "ContradictionPair",
     ])

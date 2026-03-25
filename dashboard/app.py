@@ -365,6 +365,71 @@ async def conscience_tamas_recovery(agent_id: str, auth: bool = Depends(require_
         return {"error": "Conscience Monitor not available"}
     return conscience_monitor.get_recovery_score(agent_id)
 
+
+# --- Temporal Consistency endpoints (Phase 3.4) ---
+
+class TemporalClaimInput(BaseModel):
+    """Input for temporal consistency check."""
+    claim: str
+    confidence: float = 1.0
+
+
+class TemporalAddInput(BaseModel):
+    """Input for adding a temporal statement."""
+    claim: str
+    confidence: float = 1.0
+    source: str = "user"
+
+
+@app.get("/api/conscience/temporal/{agent_id}")
+async def conscience_temporal(agent_id: str, auth: bool = Depends(require_auth)):
+    """Get temporal consistency summary for an agent."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return conscience_monitor.get_temporal_consistency(agent_id)
+
+
+@app.post("/api/conscience/temporal/{agent_id}/check")
+async def conscience_temporal_check(
+    agent_id: str, data: TemporalClaimInput, auth: bool = Depends(require_auth)
+):
+    """Pre-flight check: test a claim against agent's temporal history."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return conscience_monitor.check_temporal_consistency(
+        agent_id, data.claim, data.confidence
+    )
+
+
+@app.post("/api/conscience/temporal/{agent_id}/add")
+async def conscience_temporal_add(
+    agent_id: str, data: TemporalAddInput, auth: bool = Depends(require_auth)
+):
+    """Add a statement to an agent's temporal history and get contradictions."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    contradictions = conscience_monitor.temporal_checker.add_statement(
+        agent_id, data.claim, data.confidence, data.source
+    )
+    return {
+        "agent_id": agent_id,
+        "added": True,
+        "contradictions_found": len(contradictions),
+        "contradictions": [c.to_dict() for c in contradictions],
+        "consistency_score": conscience_monitor.temporal_checker.get_consistency_score(agent_id),
+        "consistency_level": conscience_monitor.temporal_checker.get_consistency_level(agent_id).value,
+    }
+
+
+@app.get("/api/conscience/temporal/{agent_id}/contradictions")
+async def conscience_temporal_contradictions(
+    agent_id: str, auth: bool = Depends(require_auth)
+):
+    """Get all temporal contradictions for an agent."""
+    if not conscience_monitor:
+        return {"error": "Conscience Monitor not available"}
+    return conscience_monitor.get_contradiction_history(agent_id)
+
 @app.post("/api/login")
 async def login(req: LoginRequest):
     """Authenticate with a token. Returns a session ID."""

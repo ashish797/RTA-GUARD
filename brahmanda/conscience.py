@@ -32,6 +32,13 @@ from .tamas import (
     EscalationAction,
 )
 
+from .temporal import (
+    TemporalConsistencyChecker,
+    ConsistencyLevel,
+    classify_consistency,
+    ContradictionPair,
+)
+
 logger = logging.getLogger(__name__)
 
 # ─── Database helpers ──────────────────────────────────────────────
@@ -436,6 +443,9 @@ class ConscienceMonitor:
         # Tamas detector (Phase 3.3)
         self.tamas_detector = TamasDetector()
 
+        # Temporal consistency checker (Phase 3.4)
+        self.temporal_checker = TemporalConsistencyChecker()
+
         self._init_db()
 
         # Tamas store (needs persistent connection)
@@ -633,6 +643,9 @@ class ConscienceMonitor:
 
         # Tamas detection (Phase 3.3)
         self._evaluate_tamas(agent_id, agent)
+
+        # Temporal consistency check (Phase 3.4)
+        self._evaluate_temporal(agent_id, verification_result)
 
     def _extract_confidence(self, result: Any) -> float:
         """Extract confidence score from a verification result."""
@@ -851,6 +864,92 @@ class ConscienceMonitor:
             "agent_id": agent_id,
             "recovery_score": self.tamas_detector.get_recovery_score(agent_id),
             "current_state": self.tamas_detector.get_current_state(agent_id).value,
+        }
+
+    # ── Temporal Consistency (Phase 3.4) ─────────────────────────
+
+    def _evaluate_temporal(self, agent_id: str, verification_result: Any):
+        """
+        Extract claims from a verification result and add them to
+        the temporal consistency checker.
+
+        Feeds the consistency score into the agent's drift calculation
+        by updating the alignment drift component.
+        """
+        claims = self._extract_temporal_claims(verification_result)
+        for claim_text in claims:
+            self.temporal_checker.add_statement(
+                agent_id=agent_id,
+                claim=claim_text,
+                confidence=self._extract_confidence(verification_result),
+                source="verification",
+            )
+
+        # Update agent's alignment drift component with temporal consistency
+        agent = self._load_agent(agent_id)
+        if agent and agent.interaction_count > 0:
+            consistency_score = self.temporal_checker.get_consistency_score(agent_id)
+            # Alignment drift = 1 - consistency (high consistency = low drift)
+            alignment_drift = round(1.0 - consistency_score, 4)
+            if agent.drift_components:
+                agent.drift_components["alignment"] = alignment_drift
+            else:
+                agent.drift_components = {"alignment": alignment_drift}
+            self._save_agent(agent)
+
+    def _extract_temporal_claims(self, result: Any) -> List[str]:
+        """Extract claim texts from a verification result for temporal tracking."""
+        claims = []
+        if hasattr(result, "claims"):
+            result_claims = result.claims
+            if isinstance(result_claims, list):
+                for c in result_claims:
+                    if hasattr(c, "claim"):
+                        claims.append(c.claim)
+                    elif isinstance(c, dict) and "claim" in c:
+                        claims.append(c["claim"])
+        elif hasattr(result, "text"):
+            claims.append(result.text)
+        elif isinstance(result, dict):
+            if "claims" in result:
+                for c in result["claims"]:
+                    if isinstance(c, dict) and "claim" in c:
+                        claims.append(c["claim"])
+            elif "text" in result:
+                claims.append(result["text"])
+        return claims
+
+    def get_temporal_consistency(self, agent_id: str) -> Dict[str, Any]:
+        """Get temporal consistency summary for an agent."""
+        return self.temporal_checker.get_temporal_summary(agent_id)
+
+    def check_temporal_consistency(
+        self,
+        agent_id: str,
+        claim: str,
+        confidence: float = 1.0,
+    ) -> Dict[str, Any]:
+        """
+        Pre-flight check: test a claim against an agent's history
+        WITHOUT adding it. Returns contradictions if found.
+        """
+        contradictions = self.temporal_checker.check_consistency(
+            agent_id, claim, confidence
+        )
+        return {
+            "agent_id": agent_id,
+            "claim": claim,
+            "contradictions": [c.to_dict() for c in contradictions],
+            "consistency_score": self.temporal_checker.get_consistency_score(agent_id),
+            "consistency_level": self.temporal_checker.get_consistency_level(agent_id).value,
+        }
+
+    def get_contradiction_history(self, agent_id: str) -> Dict[str, Any]:
+        """Get all temporal contradictions for an agent."""
+        return {
+            "agent_id": agent_id,
+            "contradictions": self.temporal_checker.get_contradiction_history(agent_id),
+            "total": self.temporal_checker.get_contradiction_count(agent_id),
         }
 
     # ── Listing ───────────────────────────────────────────────────
