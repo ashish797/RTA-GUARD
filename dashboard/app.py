@@ -16,8 +16,28 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import sys
+import logging
+logger = logging.getLogger(__name__)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from discus import DiscusGuard, GuardConfig, RtaEngine
+
+# Initialize Brahmanda Map — Qdrant if QDRANT_URL set, else in-memory
+brahmanda_backend = os.getenv("BRAHMANDA_BACKEND", "auto")
+if brahmanda_backend == "qdrant" or (brahmanda_backend == "auto" and os.getenv("QDRANT_URL")):
+    try:
+        from brahmanda.qdrant_client import QdrantBrahmanda
+        from brahmanda.verifier import BrahmandaVerifier
+        brahmanda_map = QdrantBrahmanda()
+        brahmanda_verifier = BrahmandaVerifier(brahmanda_map)
+        logger.info(f"Brahmanda Map: Qdrant backend ({os.getenv('QDRANT_URL')})")
+    except Exception as e:
+        logger.warning(f"Qdrant init failed ({e}), falling back to in-memory")
+        from brahmanda.verifier import get_seed_verifier
+        brahmanda_verifier = get_seed_verifier()
+else:
+    from brahmanda.verifier import get_seed_verifier
+    brahmanda_verifier = get_seed_verifier()
+    logger.info("Brahmanda Map: in-memory backend")
 from dashboard.auth import init_auth, require_auth, AuthConfig, LoginRequest, LoginResponse, get_auth_manager
 
 app = FastAPI(title="RTA-GUARD Dashboard", version="0.1.0")
@@ -129,6 +149,32 @@ async def reset_session(session_id: str, auth: bool = Depends(require_auth)):
     """Reset a killed session."""
     guard.reset_session(session_id)
     return {"status": "ok", "session_id": session_id}
+
+
+# --- Brahmanda Map endpoints ---
+
+class VerifyInput(BaseModel):
+    """Text to verify against ground truth."""
+    text: str
+    domain: str = "general"
+
+
+@app.post("/api/brahmanda/verify")
+async def brahmanda_verify(input_data: VerifyInput, auth: bool = Depends(require_auth)):
+    """Verify text against the Brahmanda Map (ground truth)."""
+    result = brahmanda_verifier.verify(input_data.text, domain=input_data.domain)
+    return result.to_dict()
+
+
+@app.get("/api/brahmanda/status")
+async def brahmanda_status():
+    """Get Brahmanda Map backend status."""
+    backend_type = "qdrant" if hasattr(brahmanda_verifier.brahmanda, '_client') else "memory"
+    return {
+        "backend": backend_type,
+        "fact_count": brahmanda_verifier.brahmanda.fact_count,
+        "qdrant_url": os.getenv("QDRANT_URL") if backend_type == "qdrant" else None,
+    }
 
 
 # --- Auth endpoints ---
