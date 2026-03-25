@@ -10,6 +10,7 @@ Usage:
     print(result.decision)  # VerifyDecision.PASS
 """
 import logging
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Tuple
 
@@ -19,6 +20,7 @@ from .models import (
 )
 from .extractor import extract_claims, ExtractedClaim
 from .verifier import BrahmandaMap, BrahmandaVerifier, classify_domain
+from .confidence import ConfidenceScorer, ConfidenceExplanation, ConfidenceLevel
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +39,10 @@ class ClaimVerification:
     verified: bool
     reason: str
     details: Dict[str, Any] = field(default_factory=dict)
+    confidence_explanation: Optional[dict] = None  # Phase 2.5: detailed breakdown
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "claim": self.claim,
             "claim_type": self.claim_type,
             "domain": self.domain,
@@ -47,11 +50,15 @@ class ClaimVerification:
             "top_matches_count": len(self.top_matches),
             "decision": self.decision.value,
             "confidence": round(self.confidence, 4),
+            "confidence_level": ConfidenceLevel.from_score(self.confidence).value,
             "contradicted": self.contradicted,
             "verified": self.verified,
             "reason": self.reason,
             "details": self.details,
         }
+        if self.confidence_explanation:
+            d["confidence_explanation"] = self.confidence_explanation
+        return d
 
 
 @dataclass
@@ -73,6 +80,7 @@ class PipelineResult:
             "text": self.text[:200] + ("..." if len(self.text) > 200 else ""),
             "overall_decision": self.overall_decision.value,
             "overall_confidence": round(self.overall_confidence, 4),
+            "confidence_level": ConfidenceLevel.from_score(self.overall_confidence).value,
             "claim_count": self.claim_count,
             "passed": self.passed_count,
             "blocked": self.blocked_count,
@@ -111,12 +119,14 @@ class VerificationPipeline:
         contradiction_threshold: float = 0.5,  # min fact confidence to trust contradiction
         pass_similarity: float = 0.5,  # min similarity for PASS
         warn_similarity: float = 0.2,  # min similarity for WARN (below = unverifiable)
+        scorer: Optional[ConfidenceScorer] = None,
     ):
         self.verifier = verifier or BrahmandaVerifier()
         self.top_k = top_k
         self.contradiction_threshold = contradiction_threshold
         self.pass_similarity = pass_similarity
         self.warn_similarity = warn_similarity
+        self.scorer = scorer or ConfidenceScorer()
 
     def verify(self, text: str, domain: Optional[str] = None) -> PipelineResult:
         """
@@ -249,9 +259,24 @@ class VerificationPipeline:
 
         if best_match and best_match.matched_fact:
             sim = best_match.similarity
-            fact_conf = best_match.matched_fact.calculate_effective_confidence()
-            # Confidence = weighted combination of similarity and fact authority
-            verification_confidence = sim * 0.6 + fact_conf * 0.4
+            fact = best_match.matched_fact
+            fact_conf = fact.calculate_effective_confidence()
+
+            # Phase 2.5: Use ConfidenceScorer for verification confidence
+            try:
+                verified_dt = datetime.fromisoformat(fact.verified_at.replace("Z", "+00:00"))
+                age_days = max(0.0, (datetime.now(timezone.utc) - verified_dt).total_seconds() / 86400)
+            except (ValueError, TypeError):
+                age_days = 0.0
+
+            verification_confidence, conf_explanation = self.scorer.score_verification(
+                similarity=sim,
+                fact_confidence=fact.confidence,
+                source_authority_score=fact.source.authority_score,
+                fact_age_days=age_days,
+                domain=domain,
+                is_expired=fact.is_expired(),
+            )
 
             if sim >= self.pass_similarity:
                 decision = VerifyDecision.PASS
@@ -274,6 +299,7 @@ class VerificationPipeline:
                 contradicted=False,
                 verified=(decision == VerifyDecision.PASS),
                 reason=reason,
+                confidence_explanation=conf_explanation.to_dict(),
                 details={
                     "similarity": sim,
                     "fact_confidence": fact_conf,
