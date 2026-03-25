@@ -17,7 +17,7 @@ from pathlib import Path
 import subprocess
 
 # Project root
-ROOT = Path(__file__).parent.parent.parent
+ROOT = Path(__file__).parent.parent  # rta-guard-mvp directory
 
 
 def run_git(*args):
@@ -529,7 +529,7 @@ def generate_html(phases, completed_tasks, total_tasks=50):
 </html>"""
 
     # Write the file
-    output_path = ROOT / "rta-guard-mvp" / "mission-control" / "index.html"
+    output_path = ROOT / "mission-control" / "index.html"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html)
     print(f"✓ Mission Control updated: {output_path}")
