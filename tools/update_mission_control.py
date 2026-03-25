@@ -529,7 +529,8 @@ def generate_html(phases, completed_tasks, total_tasks=50):
 </html>"""
 
     # Write the file
-    output_path = ROOT / "rta-guard-mvp" / "docs" / "MISSION-CONTROL.html"
+    output_path = ROOT / "rta-guard-mvp" / "mission-control" / "index.html"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html)
     print(f"✓ Mission Control updated: {output_path}")
     return output_path
