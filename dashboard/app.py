@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from discus import DiscusGuard, GuardConfig
+from discus import DiscusGuard, GuardConfig, RtaEngine
 from dashboard.auth import init_auth, require_auth, AuthConfig, LoginRequest, LoginResponse, get_auth_manager
 
 app = FastAPI(title="RTA-GUARD Dashboard", version="0.1.0")
@@ -29,8 +29,11 @@ auth_config = AuthConfig(
 )
 auth = init_auth(auth_config)
 
-# Global guard instance for the dashboard
-guard = DiscusGuard(GuardConfig(log_all=True))
+# Initialize RTA engine (draft rules)
+rta_engine = RtaEngine(GuardConfig(log_all=True))
+
+# Global guard instance for the dashboard — WITH RTA enabled
+guard = DiscusGuard(GuardConfig(log_all=True), rta_engine=rta_engine)
 
 # Connected websocket clients
 connected_clients: list[WebSocket] = []
