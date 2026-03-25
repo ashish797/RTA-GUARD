@@ -116,6 +116,20 @@ class TestSingleSource:
             domain="general",
         )
         assert 0.3 < score < 0.85, f"Expected MEDIUM range, got {score}"
+        assert any("single source" in n.lower() for n in explanation.notes)
+
+    def test_single_source_capped_below_high(self):
+        """Single source (authority < 0.95) is capped at MEDIUM."""
+        ConfidenceScorer = _import_scorer()
+        scorer = ConfidenceScorer()
+        score, explanation = scorer.score(
+            source_scores=[0.90],
+            sources_agree=True,
+            fact_age_days=0,
+            domain="general",
+        )
+        assert score < 0.85, f"Single source (0.90) should be capped at MEDIUM, got {score}"
+        assert any("single source" in n.lower() for n in explanation.notes)
 
     def test_single_low_authority_source(self):
         ConfidenceScorer = _import_scorer()
