@@ -78,6 +78,16 @@ except ImportError:
     rate_limiter = None
     logger.warning("Rate limiting module not available")
 
+# Initialize SLA Monitoring (Phase 4.8)
+try:
+    from brahmanda.sla_monitor import SLATracker, get_sla_tracker, reset_sla_tracker
+    _sla_db = os.getenv("SLA_DB_PATH", os.path.join(data_dir, "sla_monitor.db"))
+    sla_tracker = get_sla_tracker(db_path=_sla_db)
+    logger.info(f"SLA Monitor initialized (Phase 4.8) — db: {_sla_db}")
+except ImportError:
+    sla_tracker = None
+    logger.warning("SLA Monitor module not available")
+
 from dashboard.auth import init_auth, require_auth, require_auth_with_tenant, require_permission, AuthConfig, LoginRequest, LoginResponse, get_auth_manager, get_sso_auth, require_auth_with_sso
 from dashboard.models import (
     EventsResponse, KilledSessionsResponse, StatsResponse, CheckResponse,
@@ -203,7 +213,8 @@ if conscience_monitor and escalation_chain:
 
 # Global guard instance for the dashboard — WITH RTA enabled
 guard = DiscusGuard(GuardConfig(log_all=True), rta_engine=rta_engine, user_tracker=user_tracker,
-                    escalation_chain=escalation_chain)
+                    escalation_chain=escalation_chain, webhook_manager=webhook_manager,
+                    sla_tracker=sla_tracker)
 
 # Connected websocket clients
 connected_clients: list[WebSocket] = []
@@ -212,6 +223,44 @@ connected_clients: list[WebSocket] = []
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+
+# --- SLA Monitoring Middleware (Phase 4.8) ---
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response as StarletteResponse
+
+
+class SLAMiddleware(BaseHTTPMiddleware):
+    """Records request duration and status code for SLA tracking."""
+
+    async def dispatch(self, request: StarletteRequest, call_next):
+        if sla_tracker is None:
+            return await call_next(request)
+
+        import time as _time
+        start = _time.monotonic()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            duration_ms = (_time.monotonic() - start) * 1000.0
+            try:
+                sla_tracker.record_request(
+                    endpoint=request.url.path,
+                    duration_ms=duration_ms,
+                    status_code=status_code,
+                )
+            except Exception:
+                pass  # Don't let SLA tracking break requests
+
+
+if sla_tracker is not None:
+    app.add_middleware(SLAMiddleware)
+    logger.info("SLA middleware active — all requests tracked")
 
 
 class EventInput(BaseModel):
@@ -1339,6 +1388,69 @@ async def rate_limit_configure(
     )
     rate_limiter.configure_tenant(tenant_id, rate_limit=rl_config, quota=q_config)
     return {"status": "configured", "tenant_id": tenant_id, "rate_limit": rl_config.to_dict(), "quota": q_config.to_dict()}
+
+
+# --- SLA Monitoring endpoints (Phase 4.8) ---
+
+@app.get("/api/sla/status")
+async def sla_status(auth: bool = Depends(require_auth)):
+    """Get current SLA status for all tracked metrics."""
+    if not sla_tracker:
+        return {"enabled": False, "metrics": [], "message": "SLA monitoring not configured"}
+    metrics = sla_tracker.get_sla_status()
+    return {
+        "enabled": True,
+        "metrics": [m.to_dict() for m in metrics],
+        "breached": [m.name for m in metrics if m.status == "breached"],
+        "total_breaches": sla_tracker.get_breach_count(),
+    }
+
+
+@app.get("/api/sla/metrics/{metric_name}")
+async def sla_metric(metric_name: str, auth: bool = Depends(require_auth)):
+    """Get a specific SLA metric by name."""
+    if not sla_tracker:
+        return {"error": "SLA monitoring not configured"}
+    metrics = sla_tracker.get_sla_status()
+    for m in metrics:
+        if m.name == metric_name:
+            return m.to_dict()
+    from fastapi import HTTPException
+    raise HTTPException(status_code=404, detail=f"Metric not found: {metric_name}")
+
+
+@app.get("/api/sla/breaches")
+async def sla_breaches(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    auth: bool = Depends(require_auth),
+):
+    """Get SLA breaches within a date range."""
+    if not sla_tracker:
+        return {"breaches": [], "total": 0}
+    breaches = sla_tracker.get_sla_breaches(from_date=from_date, to_date=to_date)
+    return {
+        "breaches": [b.to_dict() for b in breaches],
+        "total": len(breaches),
+    }
+
+
+@app.get("/api/sla/stats")
+async def sla_stats(auth: bool = Depends(require_auth)):
+    """Get raw SLA statistics: request count, kill count, uptime, response time."""
+    if not sla_tracker:
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "request_count": sla_tracker.get_request_count(),
+        "kill_count": sla_tracker.get_kill_count(),
+        "breach_count": sla_tracker.get_breach_count(),
+        "uptime_percentage": sla_tracker.get_uptime_percentage(),
+        "avg_response_time_ms": sla_tracker.get_avg_response_time(),
+        "kill_rate": sla_tracker.get_kill_rate(),
+        "false_positive_rate": sla_tracker.get_false_positive_rate(),
+        "mean_time_to_detect_ms": sla_tracker.get_mean_time_to_detect(),
+    }
 
 
 @app.websocket("/ws")

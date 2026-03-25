@@ -46,20 +46,22 @@ class DiscusGuard:
 
     def __init__(self, config: Optional[GuardConfig] = None, rta_engine: Optional[RtaEngine] = None,
                  user_tracker: Optional[Any] = None, escalation_chain: Optional[Any] = None,
-                 webhook_manager: Optional[Any] = None):
+                 webhook_manager: Optional[Any] = None, sla_tracker: Optional[Any] = None):
         self.config = config or GuardConfig()
         self.rule_engine = RuleEngine(self.config)
         self.rta_engine = rta_engine  # RTA constitutional engine (optional)
         self.user_tracker = user_tracker  # UserBehaviorTracker (optional, Phase 3.5)
         self.escalation_chain = escalation_chain  # EscalationChain (optional, Phase 3.6)
         self.webhook_manager = webhook_manager  # WebhookManager (optional, Phase 4.4)
+        self.sla_tracker = sla_tracker  # SLATracker (optional, Phase 4.8)
         self._event_log: list[SessionEvent] = []
         self._on_kill_callbacks: list[Callable] = []
         self._killed_sessions: set[str] = set()
         logger.info("DiscusGuard initialized" + (" with RTA" if rta_engine else "")
                      + (" with user tracking" if user_tracker else "")
                      + (" with escalation" if escalation_chain else "")
-                     + (" with webhooks" if webhook_manager else ""))
+                     + (" with webhooks" if webhook_manager else "")
+                     + (" with SLA monitoring" if sla_tracker else ""))
 
     def on_kill(self, callback: Callable[[SessionEvent], None]):
         """Register a callback for when a session is killed."""
@@ -359,6 +361,8 @@ class DiscusGuard:
                 callback(event)
             except Exception as e:
                 logger.error(f"Kill callback error: {e}")
+        # SLA kill recording (Phase 4.8)
+        self._record_sla_kill(event)
 
     async def _notify_dashboard(self, event: SessionEvent):
         """Send event to dashboard via websocket."""
@@ -390,3 +394,16 @@ class DiscusGuard:
             self.webhook_manager.fire(webhook_event)
         except Exception as e:
             logger.debug(f"Webhook notification failed: {e}")
+
+    def _record_sla_kill(self, event: SessionEvent, detection_time_ms: float = 0.0):
+        """Record kill event for SLA tracking (Phase 4.8)."""
+        if not self.sla_tracker:
+            return
+        try:
+            self.sla_tracker.record_kill(
+                session_id=event.session_id,
+                reason=str(event.violation_type.value) if event.violation_type else "unknown",
+                detection_time_ms=detection_time_ms,
+            )
+        except Exception as e:
+            logger.debug(f"SLA kill recording failed: {e}")
