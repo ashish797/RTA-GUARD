@@ -1,3 +1,4 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
@@ -5,9 +6,47 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.eggs/
+*.so
+.Python
+
+# Rust
+discus-rs/target/
+discus-rs/pkg/
+*.swp
+
+# Environment
 .env
+.env.local
+*.env
+
+# Databases
 *.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Caches
 .ruff_cache/
 .mypy_cache/
+.pytest_cache/
 .herenow/
-.github/workflows/
+.node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data
+data/
+```
