@@ -139,13 +139,20 @@ class RuleEngine:
         """
         Evaluate text against all rules.
         Returns (violation_type, severity, details) or None if safe.
+
+        Layers (in order):
+        1. Prompt injection (CRITICAL)
+        2. PII patterns (MEDIUM/HIGH)
+        3. Sensitive keywords (HIGH/CRITICAL)
+        4. User blocked keywords (HIGH)
+        5. NER-based dynamic detection (MEDIUM/HIGH) — catches unstructured PII
         """
         # Check prompt injection first (highest priority)
         result = self._check_injection(text)
         if result:
             return result
 
-        # Check PII
+        # Check PII patterns (regex)
         result = self._check_pii(text)
         if result:
             return result
@@ -157,6 +164,13 @@ class RuleEngine:
 
         # Check custom blocked keywords
         result = self._check_blocked_keywords(text)
+        if result:
+            return result
+
+        # Check NER-based dynamic detection (names, addresses, etc.)
+        result = self._check_ner(text)
+        if result:
+            return result
         if result:
             return result
 
@@ -224,4 +238,39 @@ class RuleEngine:
                 Severity.HIGH,
                 f"Blocked keywords: {', '.join(found)}"
             )
+        return None
+
+    def _check_ner(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
+        """
+        NER-based dynamic PII detection.
+
+        Detects sensitive entities that regex misses:
+        - Names (John Smith)
+        - Addresses (42 MG Road, Mumbai)
+        - Financial amounts (₹50,000)
+        - Organizations (Google, Apollo Hospital)
+        - Medical info (Type 2 diabetes)
+
+        Falls back gracefully if spaCy not installed.
+        """
+        try:
+            from brahmanda.ner_detector import get_ner_detector
+            ner = get_ner_detector()
+            if ner is None:
+                return None  # NER unavailable, skip
+
+            result = ner.detect_sensitive_content(text)
+            if result:
+                details, severity_str = result
+                severity = Severity.HIGH if severity_str == "HIGH" else Severity.MEDIUM
+                return (
+                    ViolationType.PII_DETECTED,
+                    severity,
+                    details
+                )
+        except ImportError:
+            pass  # brahmanda module not available
+        except Exception:
+            pass  # any NER error, skip gracefully
+
         return None
