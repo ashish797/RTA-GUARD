@@ -161,9 +161,9 @@ def detect_pii_presidio(text: str, score_threshold: float = 0.4) -> Optional[tup
 
     # HIGH-confidence PII (always kill if detected)
     HIGH_CONFIDENCE_PII = {
-        "EMAIL_ADDRESS", "PHONE_NUMBER", "US_SSN", "CREDIT_CARD",
+        "EMAIL_ADDRESS", "US_SSN", "CREDIT_CARD",
         "IP_ADDRESS", "IBAN_CODE", "INDIAN_PAN", "INDIAN_AADHAAR",
-        "MEDICAL_LICENSE", "URL", "PERSON",
+        "MEDICAL_LICENSE", "PERSON",
     }
 
     # LOW-confidence entities (skip — not actual PII, just general knowledge)
@@ -172,6 +172,8 @@ def detect_pii_presidio(text: str, score_threshold: float = 0.4) -> Optional[tup
         "LOCATION",      # "Paris", "Mumbai" — not PII
         "DATE_TIME",     # "today", "January" — not PII
         "NRP",           # nationality — not PII
+        "URL",           # URLs in output are not PII
+        "PHONE_NUMBER",  # Public helplines in output, not personal phones
     }
 
     # Map entity types to readable names
