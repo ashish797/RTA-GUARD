@@ -1,0 +1,203 @@
+# RTA-GUARD — Medium Deployment Example
+
+# HA, multi-region (2 regions), moderate scale
+# Suitable for: production workloads, 100–10K API calls/min
+
+global:
+  environment: production
+  logLevel: warn
+  region: us-east-1
+  replicaRegions:
+    - us-west-2
+
+# --- Components ---
+discus:
+  replicas: 3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values: ["discus"]
+            topologyKey: kubernetes.io/hostname
+
+brahmanda:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+conscience:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+enterprise:
+  enabled: true
+  rbac:
+    enabled: true
+  sso:
+    enabled: false          # Enable when identity provider is ready
+  tenancy:
+    enabled: true
+    maxTenants: 50
+  rateLimiting:
+    enabled: true
+    defaultRpm: 1000
+
+# --- Database ---
+database:
+  type: postgresql
+  host: postgres-primary.rta-guard.svc
+  port: 5432
+  name: rtaguard
+  ssl: true
+  pool:
+    minSize: 5
+    maxSize: 20
+  replicas:
+    enabled: true
+    count: 1
+    host: postgres-standby.rta-guard.svc
+
+# --- Cache ---
+redis:
+  enabled: true
+  mode: sentinel
+  sentinel:
+    masterName: rta-master
+    nodes:
+      - redis-sentinel-0.rta-guard.svc:26379
+      - redis-sentinel-1.rta-guard.svc:26379
+      - redis-sentinel-2.rta-guard.svc:26379
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+
+# --- Networking ---
+ingress:
+  enabled: true
+  className: nginx
+  host: rta.example.com
+  tls:
+    enabled: true
+    secretName: rta-tls
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/rate-limit: "1000"
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# --- Rules ---
+rules:
+  source: defaults
+  customRulesPath: /etc/rta-guard/custom-rules.yml
+  hotReload: true
+  validation:
+    enabled: true
+    strictMode: true
+
+# --- Monitoring ---
+monitoring:
+  prometheus:
+    enabled: true
+    scrapeInterval: 15s
+    retention: 30d
+  grafana:
+    enabled: true
+    dashboards:
+      - rta-overview
+      - rta-rules
+      - rta-ha
+  logging:
+    driver: json
+    level: info
+    retention: 30d
+
+# --- HA ---
+ha:
+  enabled: true
+  leaderElection:
+    enabled: true
+    leaseName: rta-guard-leader
+    leaseDuration: 15s
+    renewDeadline: 10s
+  splitBrain:
+    detection: true
+    quorum: 2
+  failover:
+    enabled: true
+    timeout: 30s
+
+# --- Replication ---
+replication:
+  enabled: true
+  mode: async
+  peers:
+    - region: us-west-2
+      url: https://rta-west.internal:8443
+      priority: 1
+  syncInterval: 5s
+  maxLag: 10s
+
+# --- Backup ---
+backup:
+  enabled: true
+  schedule: "0 2 * * *"      # Daily at 2 AM
+  retention: 30
+  destination:
+    type: s3
+    bucket: rta-guard-backups
+    region: us-east-1
+  components:
+    - database
+    - rules
+    - config
+
+# --- Autoscaling ---
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 8
+  metrics:
+    - type: cpu
+      target: 70
+    - type: memory
+      target: 80
+  scaleDown:
+    stabilizationWindow: 300s
+    percent: 25
+
+# --- Storage ---
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: gp3
