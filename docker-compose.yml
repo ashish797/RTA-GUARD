@@ -27,6 +27,8 @@ services:
       - RTA_AUTH_TOKEN=${RTA_AUTH_TOKEN:-}
       # OpenAI (optional, for embeddings)
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Prometheus metrics (opt-in)
+      - METRICS_ENABLED=${METRICS_ENABLED:-false}
     volumes:
       - ./data/dashboard:/app/data
     depends_on:
@@ -99,6 +101,61 @@ services:
     networks:
       - rta-guard-net
     restart: unless-stopped
+
+  # ---- Prometheus (metrics collection) ----
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: rta-guard-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./data/prometheus:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - rta-guard-net
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ---- Grafana (observability dashboards) ----
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: rta-guard-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:-rta-guard-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/dashboard.json
+    volumes:
+      - ./monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./monitoring/grafana/dashboard-provider.yml:/etc/grafana/provisioning/dashboards/dashboard-provider.yml:ro
+      - ./monitoring/grafana/dashboard.json:/var/lib/grafana/dashboards/dashboard.json:ro
+      - ./data/grafana:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    networks:
+      - rta-guard-net
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 networks:
   rta-guard-net:

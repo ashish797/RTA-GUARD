@@ -22,6 +22,18 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from discus import DiscusGuard, GuardConfig, RtaEngine
 
+# Phase 6.2: Prometheus metrics (opt-in)
+_metrics_enabled = os.getenv("METRICS_ENABLED", "false").lower() == "true"
+try:
+    from brahmanda.metrics import (
+        init_metrics, set_drift_score, set_tamas_level,
+        observe_sla_response, METRICS_ENABLED as _BR_METRICS_ENABLED,
+    )
+    if _metrics_enabled:
+        init_metrics()
+except ImportError:
+    _metrics_enabled = False
+
 # Initialize Brahmanda Map — Qdrant if QDRANT_URL set, else in-memory
 brahmanda_backend = os.getenv("BRAHMANDA_BACKEND", "auto")
 if brahmanda_backend == "qdrant" or (brahmanda_backend == "auto" and os.getenv("QDRANT_URL")):
@@ -254,6 +266,9 @@ class SLAMiddleware(BaseHTTPMiddleware):
                     duration_ms=duration_ms,
                     status_code=status_code,
                 )
+                # Phase 6.2: Prometheus SLA response time
+                if _metrics_enabled:
+                    observe_sla_response(request.url.path, duration_ms / 1000.0)
             except Exception:
                 pass  # Don't let SLA tracking break requests
 
@@ -715,11 +730,15 @@ async def conscience_drift_record(data: DriftRecordInput, auth: bool = Depends(r
     """Record a drift measurement."""
     if not conscience_monitor:
         return {"error": "Conscience Monitor not available"}
-    return conscience_monitor.record_drift(
+    result = conscience_monitor.record_drift(
         agent_id=data.agent_id,
         session_id=data.session_id,
         components=data.components.model_dump(),
     )
+    # Phase 6.2: Update Prometheus drift gauge
+    if _metrics_enabled:
+        set_drift_score(data.agent_id, result.get("weighted_score", 0.0))
+    return result
 
 
 # --- Tamas Detection endpoints (Phase 3.3) ---
@@ -729,7 +748,13 @@ async def conscience_tamas(agent_id: str, auth: bool = Depends(require_auth)):
     """Get current Tamas state for an agent."""
     if not conscience_monitor:
         return {"error": "Conscience Monitor not available"}
-    return conscience_monitor.get_tamas_state(agent_id)
+    result = conscience_monitor.get_tamas_state(agent_id)
+    # Phase 6.2: Update Prometheus Tamas gauge
+    if _metrics_enabled:
+        _TAMAS_LEVELS = {"sattva": 0, "rajas": 1, "tamas": 2, "critical": 3}
+        state = result.get("state", "sattva")
+        set_tamas_level(agent_id, _TAMAS_LEVELS.get(state, 0))
+    return result
 
 
 @app.get("/api/conscience/tamas/{agent_id}/history")
@@ -1451,6 +1476,39 @@ async def sla_stats(auth: bool = Depends(require_auth)):
         "false_positive_rate": sla_tracker.get_false_positive_rate(),
         "mean_time_to_detect_ms": sla_tracker.get_mean_time_to_detect(),
     }
+
+
+# --- Prometheus Metrics endpoint (Phase 6.2) ---
+
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics():
+    """Expose Prometheus metrics. Requires METRICS_ENABLED=true."""
+    if not _metrics_enabled:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(
+            "# Metrics disabled. Set METRICS_ENABLED=true to enable.\n",
+            status_code=404,
+        )
+    try:
+        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+        from fastapi.responses import Response
+        return Response(
+            content=generate_latest(),
+            media_type=CONTENT_TYPE_LATEST,
+        )
+    except ImportError:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(
+            "# prometheus_client not installed\n",
+            status_code=500,
+        )
+
+
+# --- Drift/Tamas metrics update hooks (Phase 6.2) ---
+
+# Update drift/tamas gauges when those endpoints are queried
+_orig_drift_record = None
+_orig_tamas_eval = None
 
 
 @app.websocket("/ws")

@@ -1,0 +1,39 @@
+# ============================================================
+# Prometheus Configuration for RTA-GUARD
+# ============================================================
+# Scrapes metrics from the RTA-GUARD dashboard at /metrics
+# Load this via: prometheus --config.file=monitoring/prometheus.yml
+# ============================================================
+
+global:
+  scrape_interval: 15s        # Default scrape interval
+  evaluation_interval: 15s    # Rule evaluation interval
+  scrape_timeout: 10s         # Scrape timeout
+
+# Alertmanager configuration (optional — uncomment to enable)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#             - alertmanager:9093
+
+# Load alerting rules
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  # ---- RTA-GUARD Dashboard ----
+  - job_name: "rta-guard"
+    metrics_path: "/metrics"
+    scrape_interval: 10s
+    static_configs:
+      - targets: ["dashboard:8080"]
+        labels:
+          service: "rta-guard"
+          component: "dashboard"
+          environment: "production"
+
+  # ---- Prometheus self-monitoring ----
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

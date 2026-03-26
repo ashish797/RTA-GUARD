@@ -1,0 +1,174 @@
+# ============================================================
+# Prometheus Alerting Rules for RTA-GUARD
+# ============================================================
+# These rules fire alerts when RTA-GUARD health degrades.
+# Requires Alertmanager to route notifications.
+# ============================================================
+
+groups:
+  # ─── Kill Rate Alerts ──────────────────────────────────────
+  - name: rta_guard_kill_rate
+    interval: 30s
+    rules:
+      # Alert: High kill rate — >5 kills/min sustained for 5 minutes
+      - alert: HighKillRate
+        expr: |
+          rate(discus_kill_total[5m]) * 60 > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: guard
+        annotations:
+          summary: "RTA-GUARD kill rate elevated"
+          description: >-
+            Kill rate is {{ $value | printf "%.1f" }} kills/min
+            (threshold: 5/min sustained 5m).
+            Possible attack or misconfigured rules.
+
+      # Alert: Kill storm — >20 kills/min for 2 minutes
+      - alert: KillStorm
+        expr: |
+          rate(discus_kill_total[2m]) * 60 > 20
+        for: 2m
+        labels:
+          severity: critical
+          component: guard
+        annotations:
+          summary: "RTA-GUARD kill storm detected"
+          description: >-
+            Kill rate is {{ $value | printf "%.1f" }} kills/min
+            (threshold: 20/min). Immediate investigation required.
+
+  # ─── SLA Breach Alerts ────────────────────────────────────
+  - name: rta_guard_sla
+    interval: 30s
+    rules:
+      # Alert: P95 response time > 1 second
+      - alert: SlowResponseTime
+        expr: |
+          histogram_quantile(0.95, rate(discus_sla_response_time_seconds_bucket[5m])) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          component: sla
+        annotations:
+          summary: "RTA-GUARD P95 response time >1s"
+          description: >-
+            P95 response time is {{ $value | printf "%.2f" }}s
+            (threshold: 1.0s). API performance degraded.
+
+      # Alert: Average check duration > 500ms
+      - alert: SlowGuardChecks
+        expr: |
+          rate(discus_check_duration_seconds_sum[5m])
+            / rate(discus_check_duration_seconds_count[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: guard
+        annotations:
+          summary: "RTA-GUARD check latency >500ms"
+          description: >-
+            Average check duration is {{ $value | printf "%.2f" }}s.
+            Rule evaluation is slow — check RTA engine or verifier.
+
+  # ─── Drift Alerts ──────────────────────────────────────────
+  - name: rta_guard_drift
+    interval: 30s
+    rules:
+      # Alert: Drift score > 0.6 (critical threshold)
+      - alert: CriticalDrift
+        expr: |
+          discus_drift_score > 0.6
+        for: 3m
+        labels:
+          severity: critical
+          component: conscience
+        annotations:
+          summary: "RTA-GUARD critical drift detected"
+          description: >-
+            Agent {{ $labels.agent_id }} drift score is {{ $value | printf "%.2f" }}
+            (critical threshold: 0.6). Agent behavior is critically degraded.
+
+      # Alert: Drift score > 0.35 (unhealthy threshold)
+      - alert: UnhealthyDrift
+        expr: |
+          discus_drift_score > 0.35
+        for: 5m
+        labels:
+          severity: warning
+          component: conscience
+        annotations:
+          summary: "RTA-GUARD unhealthy drift level"
+          description: >-
+            Agent {{ $labels.agent_id }} drift score is {{ $value | printf "%.2f" }}
+            (unhealthy threshold: 0.35). Monitoring recommended.
+
+  # ─── Tamas Alerts ─────────────────────────────────────────
+  - name: rta_guard_tamas
+    interval: 30s
+    rules:
+      # Alert: Tamas level >= 2 (TAMAS or CRITICAL state)
+      - alert: TamasDetected
+        expr: |
+          discus_tamas_level >= 2
+        for: 2m
+        labels:
+          severity: warning
+          component: conscience
+        annotations:
+          summary: "RTA-GUARD Tamas state detected"
+          description: >-
+            Agent {{ $labels.agent_id }} Tamas level is {{ $value }}
+            (2=TAMAS, 3=CRITICAL). Agent in degraded state.
+
+      # Alert: Tamas CRITICAL (level 3)
+      - alert: TamasCritical
+        expr: |
+          discus_tamas_level == 3
+        for: 1m
+        labels:
+          severity: critical
+          component: conscience
+        annotations:
+          summary: "RTA-GUARD Tamas CRITICAL state"
+          description: >-
+            Agent {{ $labels.agent_id }} in Tamas CRITICAL state.
+            Auto-kill should have triggered — verify escalation chain.
+
+  # ─── Webhook Delivery Alerts ──────────────────────────────
+  - name: rta_guard_webhooks
+    interval: 60s
+    rules:
+      # Alert: No webhook deliveries in 30 minutes (if kills happened)
+      - alert: WebhookDeliveryGap
+        expr: |
+          increase(discus_kill_total[30m]) > 0
+            and increase(discus_webhook_sent_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          component: webhooks
+        annotations:
+          summary: "RTA-GUARD webhook delivery gap"
+          description: >-
+            Kills occurred in the last 30m but no webhooks were delivered.
+            Check webhook manager connectivity.
+
+  # ─── Session Health ───────────────────────────────────────
+  - name: rta_guard_sessions
+    interval: 30s
+    rules:
+      # Alert: Very high active session count (possible leak)
+      - alert: HighSessionCount
+        expr: |
+          discus_active_sessions > 10000
+        for: 5m
+        labels:
+          severity: warning
+          component: sessions
+        annotations:
+          summary: "RTA-GUARD high active session count"
+          description: >-
+            {{ $value }} active sessions. Possible session leak
+            or unexpected traffic spike.

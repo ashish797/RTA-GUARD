@@ -1,0 +1,15 @@
+# Grafana dashboard provisioning for RTA-GUARD
+# Auto-loads the RTA-GUARD dashboard from disk
+
+apiVersion: 1
+
+providers:
+  - name: "RTA-GUARD"
+    orgId: 1
+    folder: "RTA-GUARD"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

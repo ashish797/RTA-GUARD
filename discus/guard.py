@@ -6,6 +6,8 @@ The main class that wraps your AI app and adds deterministic session termination
 import asyncio
 import json
 import logging
+import os
+import time
 from typing import Optional, Callable, Any
 from datetime import datetime
 
@@ -19,6 +21,20 @@ from .rules import RuleEngine
 from .rta_engine import RtaEngine, RtaContext
 
 logger = logging.getLogger("discus")
+
+# Phase 6.2: Prometheus metrics (opt-in, backward compatible)
+_metrics_enabled = os.getenv("METRICS_ENABLED", "false").lower() == "true"
+try:
+    from brahmanda.metrics import (
+        record_kill, record_check, record_violation, record_webhook,
+        set_active_sessions, observe_check_duration, observe_kill_decision_time,
+        init_metrics,
+    )
+    if _metrics_enabled:
+        init_metrics()
+except ImportError:
+    _metrics_enabled = False
+    logger.debug("brahanda.metrics not available — metrics disabled")
 
 
 class SessionKilledError(Exception):
@@ -74,6 +90,8 @@ class DiscusGuard:
         Returns GuardResponse with allowed=True/False.
         Raises SessionKilledError if kill threshold is met.
         """
+        _check_start = time.monotonic() if _metrics_enabled else None
+
         # Phase 3.5: User behavior tracking — record before processing
         user_signals = []
         user_risk_kill = False
@@ -124,6 +142,15 @@ class DiscusGuard:
                 self._fire_on_kill(event)
                 self._fire_webhook(event)
 
+                # Phase 6.2: Metrics
+                if _metrics_enabled:
+                    record_kill()
+                    record_check("kill")
+                    record_violation(severity.value.lower())
+                    observe_check_duration(time.monotonic() - _check_start)
+                    observe_kill_decision_time(time.monotonic() - _check_start)
+                    set_active_sessions(len(self._killed_sessions))  # approximation
+
                 logger.warning(f"🛑 SESSION KILLED [{session_id}]: {details}")
                 raise SessionKilledError(event)
             else:
@@ -138,6 +165,13 @@ class DiscusGuard:
                 )
                 self._log_event(event)
                 self._fire_webhook(event)
+
+                # Phase 6.2: Metrics
+                if _metrics_enabled:
+                    record_check("warn")
+                    record_violation(severity.value.lower())
+                    observe_check_duration(time.monotonic() - _check_start)
+
                 logger.info(f"⚠️ Warning [{session_id}]: {details}")
                 return GuardResponse(
                     allowed=True,
@@ -171,6 +205,14 @@ class DiscusGuard:
                     self._killed_sessions.add(session_id)
                     self._fire_on_kill(event)
                     self._fire_webhook(event)
+
+                    # Phase 6.2: Metrics
+                    if _metrics_enabled:
+                        record_kill()
+                        record_check("kill")
+                        record_violation("critical")
+                        observe_kill_decision_time(time.monotonic() - _check_start)
+
                     logger.warning(f"🛑 SESSION KILLED (RTA) [{session_id}]: {violation.details}")
                     raise SessionKilledError(event)
             elif decision == KillDecision.WARN:
@@ -215,6 +257,14 @@ class DiscusGuard:
                 self._killed_sessions.add(session_id)
                 self._fire_on_kill(event)
                 self._fire_webhook(event)
+
+                # Phase 6.2: Metrics
+                if _metrics_enabled:
+                    record_kill()
+                    record_check("kill")
+                    record_violation("high")
+                    observe_kill_decision_time(time.monotonic() - _check_start)
+
                 logger.warning(f"🛑 SESSION KILLED (adversarial user) [{session_id}]: {details}")
                 raise SessionKilledError(event)
 
@@ -252,6 +302,14 @@ class DiscusGuard:
                     self._killed_sessions.add(session_id)
                     self._fire_on_kill(event)
                     self._fire_webhook(event)
+
+                    # Phase 6.2: Metrics
+                    if _metrics_enabled:
+                        record_kill()
+                        record_check("kill")
+                        record_violation("critical")
+                        observe_kill_decision_time(time.monotonic() - _check_start)
+
                     logger.warning(f"🛑 SESSION KILLED (escalation) [{session_id}]: {details}")
                     raise SessionKilledError(event)
                 elif decision.level >= EscalationLevel.ALERT:
@@ -268,6 +326,14 @@ class DiscusGuard:
                     self._killed_sessions.add(session_id)
                     self._fire_on_kill(event)
                     self._fire_webhook(event)
+
+                    # Phase 6.2: Metrics
+                    if _metrics_enabled:
+                        record_kill()
+                        record_check("kill")
+                        record_violation("high")
+                        observe_kill_decision_time(time.monotonic() - _check_start)
+
                     logger.warning(f"🛑 SESSION KILLED (escalation alert) [{session_id}]: {details}")
                     raise SessionKilledError(event)
             except SessionKilledError:
@@ -284,6 +350,13 @@ class DiscusGuard:
         )
         if self.config.log_all:
             self._log_event(event)
+
+        # Phase 6.2: Metrics
+        if _metrics_enabled:
+            record_check("pass")
+            observe_check_duration(time.monotonic() - _check_start)
+            set_active_sessions(len(self._killed_sessions))  # approximation
+
         return GuardResponse(allowed=True, session_id=session_id, event=event)
 
     def check_and_forward(
@@ -392,6 +465,10 @@ class DiscusGuard:
                 payload=event.model_dump(mode="json"),
             )
             self.webhook_manager.fire(webhook_event)
+
+            # Phase 6.2: Metrics
+            if _metrics_enabled:
+                record_webhook(webhook_event_type.value)
         except Exception as e:
             logger.debug(f"Webhook notification failed: {e}")
 
