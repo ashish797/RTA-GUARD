@@ -1,24 +1,106 @@
-version: "3.8"
+# ============================================================
+# RTA-GUARD — Full Stack Docker Compose
+# Dashboard (Python/FastAPI) + PostgreSQL + Redis + Qdrant
+# ============================================================
+version: "3.9"
 
 services:
+  # ---- RTA-GUARD Dashboard + Guard Engine ----
   dashboard:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rta-guard-dashboard
     ports:
-      - "8000:8000"
-    command: python -m dashboard.app
-    volumes:
-      - ./discus:/app/discus
-      - ./dashboard:/app/dashboard
+      - "${RTA_PORT:-8080}:8080"
     environment:
       - PYTHONUNBUFFERED=1
+      # Database: use Postgres when available, SQLite fallback
+      - DATABASE_URL=${DATABASE_URL:-postgresql://rta:rta_secret@postgres:5432/rtaguard}
+      # Redis for caching / rate limiting
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      # Qdrant for vector search (Brahmanda)
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      # Auth
+      - RTA_SECRET_KEY=${RTA_SECRET_KEY:-change-me-in-production}
+      - RTA_AUTH_TOKEN=${RTA_AUTH_TOKEN:-}
+      # OpenAI (optional, for embeddings)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - ./data/dashboard:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    networks:
+      - rta-guard-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
-  demo:
-    build: .
-    command: python demo/chat_demo.py
-    volumes:
-      - ./discus:/app/discus
-      - ./demo:/app/demo
+  # ---- PostgreSQL (Brahmanda primary store) ----
+  postgres:
+    image: postgres:16-alpine
+    container_name: rta-guard-postgres
     environment:
-      - PYTHONUNBUFFERED=1
-    stdin_open: true
-    tty: true
+      POSTGRES_DB: rtaguard
+      POSTGRES_USER: rta
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rta_secret}
+    volumes:
+      - ./data/pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - rta-guard-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rta -d rtaguard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---- Redis (caching, rate limiting, session store) ----
+  redis:
+    image: redis:7-alpine
+    container_name: rta-guard-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - ./data/redis:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - rta-guard-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---- Qdrant (vector database for Brahmanda) ----
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: rta-guard-qdrant
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: "6334"
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    networks:
+      - rta-guard-net
+    restart: unless-stopped
+
+networks:
+  rta-guard-net:
+    driver: bridge
+    name: rta-guard-net

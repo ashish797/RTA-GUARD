@@ -1,0 +1,16 @@
+apiVersion: v2
+name: rta-guard
+description: RTA-GUARD — AI Session Kill-Switch with Discus Guard Engine
+type: application
+version: 0.1.0
+appVersion: "0.6.1"
+keywords:
+  - ai-security
+  - guardrails
+  - session-management
+  - kill-switch
+maintainers:
+  - name: RTA-GUARD
+home: https://github.com/rta-guard/rta-guard
+sources:
+  - https://github.com/rta-guard/rta-guard

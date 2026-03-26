@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rta-guard-config
+  labels:
+    app: rta-guard
+data:
+  PYTHONUNBUFFERED: "1"
+  # Set to your PostgreSQL connection string
+  DATABASE_URL: "postgresql://rta:rta_secret@postgres:5432/rtaguard"
+  # Set to your Redis URL
+  REDIS_URL: "redis://redis:6379/0"
+  # Set to your Qdrant endpoint
+  QDRANT_URL: "http://qdrant:6333"
