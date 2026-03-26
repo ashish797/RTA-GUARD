@@ -209,11 +209,10 @@ class RuleEngine:
         # Skip layers 5-8 for output checking (LLM generates these naturally)
         if check_output:
             # Layer 10: Truth verification (R1 — SATYA) — ML-based
-            # DISABLED — too aggressive on casual speech (flags jokes as unverified)
-            # Needs better context-aware filtering
-            # result = self._check_truth(text)
-            # if result:
-            #     return result
+            # Uses NeMo SelfCheckGPT: generate multiple completions, check agreement
+            result = self._check_truth(text)
+            if result:
+                return result
 
             # Layer 11: Hallucination detection (R12 — MĀYĀ) — ML-based
             result = self._check_hallucination(text)
