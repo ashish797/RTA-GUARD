@@ -1,0 +1,206 @@
+/**
+ * RTA-GUARD Discus — Browser Extension CSS
+ * Floating widget and visual warning styles
+ */
+
+#discus-guard-widget {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  user-select: none;
+  pointer-events: auto;
+}
+
+#discus-guard-widget .dg-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid #333;
+}
+
+#discus-guard-widget .dg-badge:hover {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  transform: translateY(-1px);
+}
+
+#discus-guard-widget .dg-badge.dg-active {
+  border-color: #2ecc71;
+  background: #0d2818;
+}
+
+#discus-guard-widget .dg-badge.dg-warn {
+  border-color: #f39c12;
+  background: #2d2a1a;
+}
+
+#discus-guard-widget .dg-badge.dg-killed {
+  border-color: #e74c3c;
+  background: #2d1a1a;
+}
+
+#discus-guard-widget .dg-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+#discus-guard-widget .dg-icon.dg-green {
+  background: #2ecc71;
+  box-shadow: 0 0 6px #2ecc7188;
+}
+
+#discus-guard-widget .dg-icon.dg-yellow {
+  background: #f39c12;
+  box-shadow: 0 0 6px #f39c1288;
+  animation: dg-pulse 1.5s ease-in-out infinite;
+}
+
+#discus-guard-widget .dg-icon.dg-red {
+  background: #e74c3c;
+  box-shadow: 0 0 6px #e74c3c88;
+  animation: dg-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes dg-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+#discus-guard-widget .dg-label {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+#discus-guard-widget .dg-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 320px;
+  background: #1a1a2e;
+  border: 1px solid #333;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  padding: 16px;
+  display: none;
+}
+
+#discus-guard-widget .dg-panel.dg-open {
+  display: block;
+  animation: dg-fadeIn 0.15s ease;
+}
+
+@keyframes dg-fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#discus-guard-widget .dg-panel h3 {
+  margin: 0 0 8px;
+  color: #ff6b35;
+  font-size: 14px;
+}
+
+#discus-guard-widget .dg-panel .dg-stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  color: #aaa;
+  font-size: 12px;
+}
+
+#discus-guard-widget .dg-panel .dg-stat-val {
+  color: #e0e0e0;
+  font-weight: 600;
+}
+
+#discus-guard-widget .dg-panel .dg-violation-list {
+  margin-top: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+#discus-guard-widget .dg-panel .dg-violation {
+  padding: 6px 8px;
+  margin: 4px 0;
+  border-radius: 6px;
+  font-size: 11px;
+  background: #0d0d0d;
+  border-left: 3px solid #e74c3c;
+}
+
+#discus-guard-widget .dg-panel .dg-violation.dg-warn {
+  border-left-color: #f39c12;
+}
+
+#discus-guard-widget .dg-violation-type {
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+#discus-guard-widget .dg-violation-detail {
+  color: #888;
+  margin-top: 2px;
+}
+
+/* ─── Inline warning highlight ─── */
+
+.dg-field-warning {
+  outline: 2px solid #e74c3c !important;
+  outline-offset: 2px;
+  transition: outline-color 0.3s ease;
+}
+
+.dg-field-caution {
+  outline: 2px solid #f39c12 !important;
+  outline-offset: 2px;
+  transition: outline-color 0.3s ease;
+}
+
+/* ─── Toast notification ─── */
+
+.dg-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 2147483647;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  animation: dg-slideIn 0.3s ease, dg-fadeOut 0.3s ease 3s forwards;
+  pointer-events: none;
+}
+
+.dg-toast.dg-toast-kill {
+  background: #c0392b;
+  border: 1px solid #e74c3c;
+}
+
+.dg-toast.dg-toast-warn {
+  background: #7d6608;
+  border: 1px solid #f39c12;
+}
+
+@keyframes dg-slideIn {
+  from { opacity: 0; transform: translateX(40px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes dg-fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}

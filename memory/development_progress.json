@@ -1,6 +1,6 @@
 {
   "current_phase": 5,
-  "current_subphase": 1,
+  "current_subphase": 4,
   "phase_1": {
     "status": "done",
     "name": "RTA Rules Engine",
@@ -224,20 +224,20 @@
       {
         "id": 1,
         "name": "Rewrite core in Rust/C",
-        "done": false,
-        "notes": ""
+        "done": true,
+        "notes": "discus-rs compiles with 26/26 Rust tests passing"
       },
       {
         "id": 2,
         "name": "Wasm compilation pipeline",
-        "done": false,
-        "notes": ""
+        "done": true,
+        "notes": "WASM binary (1.7MB) compiles, build.sh, serve.py, browser_test.html"
       },
       {
         "id": 3,
         "name": "Browser injection support",
-        "done": false,
-        "notes": ""
+        "done": true,
+        "notes": "Phase 5.3 COMPLETE. pkg/discus_rs.js (10KB ES module with WASM loader + fallback engine), pkg/discus_rs.d.ts (TypeScript declarations), inject/discus-guard.js (16KB content script: input monitoring, form interception, floating widget, MutationObserver, debounced checks, toast notifications), inject/discus-guard.css (4KB widget styles), inject/background.js (5KB service worker with message API), inject/manifest.json (Manifest V3 for Chrome/Firefox/Safari), tests/test_browser_injection.py (95/95 tests passing). WASM binary: 1,783,984 bytes. Content script adds minimal overhead (debounced 500ms checks). Pure-JS fallback engine when WASM unavailable."
       },
       {
         "id": 4,

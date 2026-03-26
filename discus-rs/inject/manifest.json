@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "RTA-GUARD Discus",
+  "version": "0.1.0",
+  "description": "AI session kill-switch — deterministic policy enforcement for browser-based AI interactions",
+  "author": "RTA-GUARD Team",
+
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+
+  "host_permissions": [
+    "<all_urls>"
+  ],
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["discus-guard.js"],
+      "css": ["discus-guard.css"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["discus_rs.wasm", "pkg/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "action": {
+    "default_title": "RTA-GUARD Discus",
+    "default_popup": "popup.html"
+  },
+
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "discus-guard@rta-guard.ai",
+      "strict_min_version": "109.0"
+    },
+    "safari": {
+      "strict_min_version": "16.4"
+    }
+  }
+}
