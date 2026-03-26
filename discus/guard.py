@@ -64,7 +64,7 @@ class DiscusGuard:
                  user_tracker: Optional[Any] = None, escalation_chain: Optional[Any] = None,
                  webhook_manager: Optional[Any] = None, sla_tracker: Optional[Any] = None):
         self.config = config or GuardConfig()
-        self.rule_engine = RuleEngine(self.config)
+        self.rule_engine = RuleEngine(self.config, self.config.pii_patterns_yaml)
         self.rta_engine = rta_engine  # RTA constitutional engine (optional)
         self.user_tracker = user_tracker  # UserBehaviorTracker (optional, Phase 3.5)
         self.escalation_chain = escalation_chain  # EscalationChain (optional, Phase 3.6)
@@ -419,6 +419,22 @@ class DiscusGuard:
         """Reset a killed session (allow it to be used again)."""
         self._killed_sessions.discard(session_id)
         logger.info(f"Session reset: {session_id}")
+
+    # --- Dynamic Pattern Management ---
+
+    def add_pattern(self, name: str, pattern: str):
+        """Add a custom PII pattern at runtime. No restart needed."""
+        self.rule_engine.add_pattern(name, pattern)
+        logger.info(f"Added PII pattern: {name}")
+
+    def reload_patterns(self, yaml_path: str = None):
+        """Reload patterns from YAML config. Can be called at runtime."""
+        self.rule_engine.reload_patterns(yaml_path)
+        logger.info(f"Reloaded PII patterns from: {yaml_path or 'auto-detected'}")
+
+    def list_patterns(self) -> dict:
+        """List all loaded PII pattern names and their regexes."""
+        return self.rule_engine.list_patterns()
 
     def _log_event(self, event: SessionEvent):
         """Log an event internally."""

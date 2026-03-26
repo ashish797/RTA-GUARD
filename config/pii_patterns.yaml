@@ -1,0 +1,208 @@
+# RTA-GUARD PII Patterns — Dynamic Configuration
+# Add patterns for any country/format without touching code.
+# Each pattern has: name, regex, severity, country (optional).
+
+# ============================================================
+# GLOBAL PATTERNS (work everywhere)
+# ============================================================
+email:
+  pattern: "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b"
+  severity: MEDIUM
+  description: "Email address"
+
+phone_international:
+  pattern: "\\+\\d{1,3}[-.\\s]?\\d{1,4}[-.\\s]?\\d{1,4}[-.\\s]?\\d{1,9}"
+  severity: MEDIUM
+  description: "International phone number"
+
+credit_card:
+  pattern: "\\b(?:\\d{4}[-\\s]?){3}\\d{4}\\b"
+  severity: HIGH
+  description: "Credit card number"
+
+ip_address:
+  pattern: "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b"
+  severity: LOW
+  description: "IP address"
+
+# ============================================================
+# UNITED STATES
+# ============================================================
+ssn_us:
+  pattern: "\\b\\d{3}[-\\s]?\\d{2}[-\\s]?\\d{4}\\b"
+  severity: HIGH
+  country: US
+  description: "US Social Security Number"
+
+itin_us:
+  pattern: "\\b9\\d{2}[-\\s]?\\d{2}[-\\s]?\\d{4}\\b"
+  severity: HIGH
+  country: US
+  description: "US Individual Taxpayer ID"
+
+ein_us:
+  pattern: "\\b\\d{2}[-\\s]?\\d{7}\\b"
+  severity: HIGH
+  country: US
+  description: "US Employer Identification Number"
+
+# ============================================================
+# INDIA
+# ============================================================
+pan_india:
+  pattern: "\\b[A-Z]{5}\\d{4}[A-Z]\\b"
+  severity: HIGH
+  country: IN
+  description: "Indian PAN Card Number"
+
+aadhaar_india:
+  pattern: "\\b\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}\\b"
+  severity: HIGH
+  country: IN
+  description: "Indian Aadhaar Number"
+
+voter_id_india:
+  pattern: "\\b[A-Z]{3}\\d{7}\\b"
+  severity: HIGH
+  country: IN
+  description: "Indian Voter ID"
+
+passport_india:
+  pattern: "\\b[A-Z]\\d{7}\\b"
+  severity: HIGH
+  country: IN
+  description: "Indian Passport Number"
+
+driving_license_india:
+  pattern: "\\b[A-Z]{2}\\d{2}[-\\s]?\\d{4}\\d{7}\\b"
+  severity: HIGH
+  country: IN
+  description: "Indian Driving License"
+
+# ============================================================
+# EUROPE
+# ============================================================
+nhs_uk:
+  pattern: "\\b\\d{3}[-\\s]?\\d{3}[-\\s]?\\d{4}\\b"
+  severity: HIGH
+  country: UK
+  description: "UK NHS Number"
+
+national_insurance_uk:
+  pattern: "\\b[A-Z]{2}\\d{6}[A-Z]\\b"
+  severity: HIGH
+  country: UK
+  description: "UK National Insurance Number"
+
+personnummer_sweden:
+  pattern: "\\b\\d{6}[-\\s]?\\d{4}\\b"
+  severity: HIGH
+  country: SE
+  description: "Swedish Personal Number"
+
+dni_spain:
+  pattern: "\\b\\d{8}[A-Z]\\b"
+  severity: HIGH
+  country: ES
+  description: "Spanish DNI"
+
+tax_id_germany:
+  pattern: "\\b\\d{11}\\b"
+  severity: HIGH
+  country: DE
+  description: "German Tax ID"
+
+# ============================================================
+# ASIA-PACIFIC
+# ============================================================
+nric_singapore:
+  pattern: "\\b[STFG]\\d{7}[A-Z]\\b"
+  severity: HIGH
+  country: SG
+  description: "Singapore NRIC"
+
+mykad_malaysia:
+  pattern: "\\b\\d{6}[-\\s]?\\d{2}[-\\s]?\\d{4}\\b"
+  severity: HIGH
+  country: MY
+  description: "Malaysian MyKad"
+
+jumin_korea:
+  pattern: "\\b\\d{6}[-\\s]?\\d{7}\\b"
+  severity: HIGH
+  country: KR
+  description: "Korean Resident Number"
+
+hanko_japan:
+  pattern: "\\b\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}\\b"
+  severity: HIGH
+  country: JP
+  description: "Japanese My Number"
+
+taiwan_id:
+  pattern: "\\b[A-Z]\\d{9}\\b"
+  severity: HIGH
+  country: TW
+  description: "Taiwan National ID"
+
+hkid_hongkong:
+  pattern: "\\b[A-Z]\\d{6}\\([A0-9]\\)\\b"
+  severity: HIGH
+  country: HK
+  description: "Hong Kong ID"
+
+# ============================================================
+# SOUTH AMERICA
+# ============================================================
+cpf_brazil:
+  pattern: "\\b\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}\\b"
+  severity: HIGH
+  country: BR
+  description: "Brazilian CPF"
+
+curp_mexico:
+  pattern: "\\b[A-Z]{4}\\d{6}[HM][A-Z]{5}\\d{2}\\b"
+  severity: HIGH
+  country: MX
+  description: "Mexican CURP"
+
+rut_chile:
+  pattern: "\\b\\d{7,8}-[\\dK]\\b"
+  severity: HIGH
+  country: CL
+  description: "Chilean RUT"
+
+dni_argentina:
+  pattern: "\\b\\d{7,8}\\b"
+  severity: HIGH
+  country: AR
+  description: "Argentine DNI"
+
+# ============================================================
+# MIDDLE EAST & AFRICA
+# ============================================================
+national_id_egypt:
+  pattern: "\\b\\d{14}\\b"
+  severity: HIGH
+  country: EG
+  description: "Egyptian National ID"
+
+national_id_saudi:
+  pattern: "\\b[12]\\d{9}\\b"
+  severity: HIGH
+  country: SA
+  description: "Saudi National ID"
+
+national_id_south_africa:
+  pattern: "\\b\\d{13}\\b"
+  severity: HIGH
+  country: ZA
+  description: "South African ID"
+
+# ============================================================
+# CUSTOM PATTERNS
+# Add your own patterns here. Each entry needs:
+#   pattern: regex
+#   severity: LOW/MEDIUM/HIGH/CRITICAL
+#   description: what it catches
+# ============================================================

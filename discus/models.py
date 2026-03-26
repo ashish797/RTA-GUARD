@@ -49,6 +49,8 @@ class GuardConfig(BaseModel):
     log_all: bool = True
     # Custom PII patterns (regex)
     pii_patterns: list[str] = Field(default_factory=list)
+    # Path to dynamic PII patterns YAML file (auto-detected if not set)
+    pii_patterns_yaml: Optional[str] = None
     # Custom blocked keywords
     blocked_keywords: list[str] = Field(default_factory=list)
     # Enable NeMo Guardrails (if False, uses built-in rules only)

@@ -3,21 +3,73 @@ RTA-GUARD Discus — Rule Engine
 
 Built-in detection rules that work without NeMo Guardrails.
 NeMo integration adds ML-based detection on top of these.
+
+Patterns are loaded dynamically from config/pii_patterns.yaml.
+Users can add new patterns for any country without touching code.
 """
+import os
 import re
+from pathlib import Path
 from typing import Optional
 
 from .models import ViolationType, Severity, GuardConfig
 
 
-# --- PII Patterns ---
-PII_PATTERNS = {
+# --- Default PII Patterns (fallback if YAML not available) ---
+DEFAULT_PII_PATTERNS = {
     "email": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
     "phone_us": r"\b(?:\+1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b",
     "ssn": r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b",
     "credit_card": r"\b(?:\d{4}[-\s]?){3}\d{4}\b",
     "ip_address": r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
 }
+
+
+def _load_pii_patterns_from_yaml(yaml_path: Optional[str] = None) -> dict:
+    """
+    Load PII patterns from YAML config file.
+    Falls back to DEFAULT_PII_PATTERNS if YAML not found or pyyaml missing.
+    """
+    if yaml_path is None:
+        # Search for config/pii_patterns.yaml relative to project root
+        candidates = [
+            Path(__file__).parent.parent / "config" / "pii_patterns.yaml",
+            Path("config/pii_patterns.yaml"),
+            Path(os.getenv("RTA_PII_PATTERNS_PATH", "")),
+        ]
+        for p in candidates:
+            if p and p.exists() and p.is_file():
+                yaml_path = str(p)
+                break
+
+    if not yaml_path or not Path(yaml_path).exists():
+        return dict(DEFAULT_PII_PATTERNS)
+
+    try:
+        import yaml
+    except ImportError:
+        # pyyaml not installed, use defaults
+        return dict(DEFAULT_PII_PATTERNS)
+
+    try:
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+    except Exception:
+        return dict(DEFAULT_PII_PATTERNS)
+
+    if not data or not isinstance(data, dict):
+        return dict(DEFAULT_PII_PATTERNS)
+
+    patterns = {}
+    for name, entry in data.items():
+        if not isinstance(entry, dict) or "pattern" not in entry:
+            continue
+        patterns[name] = entry["pattern"]
+
+    # Merge with defaults (YAML overrides defaults if same name)
+    merged = dict(DEFAULT_PII_PATTERNS)
+    merged.update(patterns)
+    return merged
 
 # --- Prompt Injection Patterns ---
 INJECTION_PATTERNS = [
@@ -48,15 +100,19 @@ SENSITIVE_KEYWORDS = {
 class RuleEngine:
     """Evaluates input text against security rules."""
 
-    def __init__(self, config: GuardConfig):
+    def __init__(self, config: GuardConfig, pii_patterns_path: Optional[str] = None):
         self.config = config
+        self._patterns_path = pii_patterns_path
         self._compile_patterns()
 
     def _compile_patterns(self):
-        """Pre-compile regex patterns for performance."""
+        """Pre-compile regex patterns for performance. Loads dynamically from YAML."""
+        # Load patterns dynamically (YAML config + defaults)
+        raw_patterns = _load_pii_patterns_from_yaml(self._patterns_path)
+
         self._pii_patterns = {
             name: re.compile(pattern, re.IGNORECASE)
-            for name, pattern in PII_PATTERNS.items()
+            for name, pattern in raw_patterns.items()
         }
         # Add custom PII patterns
         for i, pattern in enumerate(self.config.pii_patterns):
@@ -66,7 +122,20 @@ class RuleEngine:
             re.compile(p, re.IGNORECASE) for p in INJECTION_PATTERNS
         ]
 
-    def evaluate(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
+    def reload_patterns(self, yaml_path: str = None):
+        """Reload patterns from YAML config. Can be called at runtime."""
+        self._patterns_path = yaml_path or self._patterns_path
+        self._compile_patterns()
+
+    def add_pattern(self, name: str, pattern: str, severity = None):
+        """Add a custom pattern at runtime without restarting."""
+        self._pii_patterns[name] = re.compile(pattern, re.IGNORECASE)
+
+    def list_patterns(self) -> dict:
+        """List all loaded PII pattern names."""
+        return {name: p.pattern for name, p in self._pii_patterns.items()}
+
+    def evaluate(self, text: str):
         """
         Evaluate text against all rules.
         Returns (violation_type, severity, details) or None if safe.
