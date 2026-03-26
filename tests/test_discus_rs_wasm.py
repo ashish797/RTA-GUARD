@@ -13,7 +13,6 @@ Skips gracefully if:
     - wasmtime not installed
 
 Usage:
-    cd rta-guard-mvp
     python -m pytest tests/test_discus_rs_wasm.py -v
 
 Mirrors discus-rs/tests/integration.rs for Python-Rust parity verification.
@@ -144,9 +143,10 @@ class _DiscusModules:
         if cls._loaded:
             return
 
-        rta_mvp = str(Path(__file__).parent.parent / "rta-guard-mvp")
-        if rta_mvp not in sys.path:
-            sys.path.insert(0, rta_mvp)
+        # Add repository root to sys.path for imports
+        repo_root = str(Path(__file__).parent.parent)
+        if repo_root not in sys.path:
+            sys.path.insert(0, repo_root)
 
         try:
             from discus.rta_engine import RtaEngine, RtaContext

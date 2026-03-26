@@ -118,7 +118,7 @@ autoscaling:
 ### Deploy
 
 ```bash
-helm install rta-guard ./rta-guard-mvp/helm/rta-guard \
+helm install rta-guard ./helm/rta-guard \
   --set ha.enabled=true \
   --set autoscaling.enabled=true \
   --set autoscaling.minReplicas=2 \
