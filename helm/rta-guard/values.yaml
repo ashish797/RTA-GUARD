@@ -141,3 +141,79 @@ readinessProbe:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# ============================================================
+# HA — Multi-Region & High Availability (Phase 6.5)
+# ============================================================
+
+ha:
+  # Set to true to enable multi-region / HA mode
+  enabled: false
+
+  # Region configuration
+  regions:
+    - name: us-east-1
+      endpoint: https://rta-guard-us-east-1.example.com
+      primary: true
+      failoverPriority: 0
+    - name: us-west-2
+      endpoint: https://rta-guard-us-west-2.example.com
+      primary: false
+      failoverPriority: 1
+    - name: eu-west-1
+      endpoint: https://rta-guard-eu-west-1.example.com
+      primary: false
+      failoverPriority: 2
+
+  # Leader election
+  leaderElection:
+    enabled: true
+    leaseDir: /tmp/rta-guard/leader
+    ttlSeconds: 30
+    # redisUrl: "redis://redis:6379/1"
+
+  # Split-brain detection
+  splitBrainDetection:
+    enabled: true
+    heartbeatDir: /tmp/rta-guard/heartbeats
+    staleThresholdSeconds: 60
+
+  # Failover
+  failover:
+    enabled: true
+    healthCheckIntervalSeconds: 10
+    failureThreshold: 3
+    autoFailback: true
+    failbackDelaySeconds: 60
+    historyPath: /app/data/failover-history
+
+  # Replication
+  replication:
+    enabled: true
+    batchSize: 50
+    flushIntervalSeconds: 5
+    maxRetries: 3
+
+  # Data residency
+  dataResidency:
+    # EU region enforces strict residency (no data egress)
+    euStrictMode: true
+    allowedEgressClassifications:
+      - telemetry
+      - aggregated_metrics
+
+# ---- Anti-Affinity (spread across zones when HA enabled) ----
+# Applied automatically when ha.enabled is true
+
+# ---- PodDisruptionBudget (HA) ----
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 2
+
+# ---- HorizontalPodAutoscaler (HA) ----
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: 80
