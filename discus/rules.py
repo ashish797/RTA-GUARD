@@ -196,6 +196,11 @@ class RuleEngine:
         if result:
             return result
 
+        # Layer 1c: Content moderation (OpenAI API) — from NeMo
+        result = self._check_content_moderation(text)
+        if result:
+            return result
+
         # Layer 2: PII via Presidio (R3 — MITRA)
         result = self._check_presidio(text)
         if result:
@@ -291,6 +296,29 @@ class RuleEngine:
                 severity = Severity.HIGH if severity_str == "HIGH" else Severity.MEDIUM
                 return (
                     ViolationType.JAILBREAK,
+                    severity,
+                    details
+                )
+        except ImportError:
+            pass
+        except Exception:
+            pass
+        return None
+
+    def _check_content_moderation(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
+        """
+        Content moderation via OpenAI API (from NeMo).
+        
+        Detects: hate, harassment, self-harm, sexual, violence.
+        """
+        try:
+            from .content_moderator import check_content_moderation
+            result = check_content_moderation(text)
+            if result:
+                severity_str, details, category = result
+                severity = Severity.HIGH if severity_str == "HIGH" else Severity.MEDIUM
+                return (
+                    ViolationType.HARMFUL_CONTENT,
                     severity,
                     details
                 )

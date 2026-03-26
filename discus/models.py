@@ -27,6 +27,7 @@ class ViolationType(str, Enum):
     UNVERIFIED_CLAIM = "unverified_claim"
     HALLUCINATION = "hallucination"
     INCONSISTENCY = "inconsistency"
+    HARMFUL_CONTENT = "harmful_content"
 
 
 class KillDecision(str, Enum):
