@@ -1,6 +1,6 @@
 {
-  "current_phase": 5,
-  "current_subphase": 8,
+  "current_phase": 7,
+  "current_subphase": 0,
   "phase_1": {
     "status": "done",
     "name": "RTA Rules Engine",
@@ -260,7 +260,7 @@
     ]
   },
   "phase_6": {
-    "status": "pending",
+    "status": "done",
     "name": "Ecosystem & Scale",
     "subphases": [
       {
@@ -308,8 +308,8 @@
       {
         "id": 8,
         "name": "Community governance",
-        "done": false,
-        "notes": ""
+        "done": true,
+        "notes": "Documentation & Training: 10 docs files, 3 training files, 3 config examples. Pushed: bad7089"
       }
     ]
   },
