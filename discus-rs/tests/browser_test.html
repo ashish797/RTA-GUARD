@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RTA-GUARD Discus — Browser WASM Test</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'SF Mono', 'Fira Code', monospace; background: #0a0a0a; color: #e0e0e0; padding: 2rem; }
+        h1 { color: #ff6b35; margin-bottom: 1rem; }
+        h2 { color: #4ecdc4; margin: 1.5rem 0 0.5rem; }
+        .test { background: #1a1a2e; border: 1px solid #333; border-radius: 8px; padding: 1rem; margin: 0.5rem 0; }
+        .test.pass { border-color: #2ecc71; }
+        .test.fail { border-color: #e74c3c; }
+        .test-name { font-weight: bold; }
+        .test-result { float: right; font-size: 1.2rem; }
+        .pass .test-result::after { content: '✅ PASS'; color: #2ecc71; }
+        .fail .test-result::after { content: '❌ FAIL'; color: #e74c3c; }
+        .detail { color: #888; font-size: 0.85rem; margin-top: 0.3rem; }
+        #summary { margin-top: 1rem; padding: 1rem; background: #1a1a2e; border-radius: 8px; font-size: 1.1rem; }
+        #log { background: #0d0d0d; padding: 1rem; border-radius: 8px; margin-top: 1rem; max-height: 300px; overflow-y: auto; font-size: 0.85rem; }
+        .log-line { margin: 0.2rem 0; }
+        .log-pass { color: #2ecc71; }
+        .log-fail { color: #e74c3c; }
+        .log-info { color: #3498db; }
+    </style>
+</head>
+<body>
+    <h1>🛡️ RTA-GUARD — Discus WASM Browser Test</h1>
+    <p>Testing WASM binary loading and function invocation in browser.</p>
+
+    <h2>Test Results</h2>
+    <div id="tests"></div>
+    <div id="summary">⏳ Running tests...</div>
+
+    <h2>Console Log</h2>
+    <div id="log"></div>
+
+    <script type="module">
+        const testDiv = document.getElementById('tests');
+        const summaryDiv = document.getElementById('summary');
+        const logDiv = document.getElementById('log');
+
+        let passed = 0;
+        let failed = 0;
+        const results = [];
+
+        function log(msg, cls = 'log-info') {
+            const line = document.createElement('div');
+            line.className = `log-line ${cls}`;
+            line.textContent = `[${new Date().toISOString().substr(11, 12)}] ${msg}`;
+            logDiv.appendChild(line);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(msg);
+        }
+
+        function addTest(name, isPass, detail = '') {
+            const div = document.createElement('div');
+            div.className = `test ${isPass ? 'pass' : 'fail'}`;
+            div.innerHTML = `
+                <span class="test-result"></span>
+                <span class="test-name">${name}</span>
+                ${detail ? `<div class="detail">${detail}</div>` : ''}
+            `;
+            testDiv.appendChild(div);
+            if (isPass) passed++; else failed++;
+            results.push({ name, pass: isPass, detail });
+        }
+
+        function updateSummary() {
+            const total = passed + failed;
+            summaryDiv.innerHTML = `
+                <strong>Results: ${passed}/${total} passed</strong>
+                ${failed === 0 ? ' — All tests passing! ✅' : ` — ${failed} failed ❌`}
+            `;
+        }
+
+        async function runTests() {
+            let wasmModule = null;
+            let wasmExports = null;
+
+            // ── Test 1: WASM binary loads ──
+            log('Loading WASM binary via fetch...', 'log-info');
+            try {
+                const resp = await fetch('./discus_rs.wasm');
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const bytes = await resp.arrayBuffer();
+                log(`WASM binary fetched: ${bytes.byteLength} bytes`, 'log-info');
+
+                const result = await WebAssembly.instantiate(bytes, {});
+                wasmModule = result.module;
+                wasmExports = result.instance.exports;
+                log(`WASM instantiated. Exports: ${Object.keys(wasmExports).join(', ')}`, 'log-info');
+                addTest('WASM binary loads', true, `${bytes.byteLength} bytes`);
+            } catch (e) {
+                log(`WASM load failed: ${e.message}`, 'log-fail');
+                addTest('WASM binary loads', false, e.message);
+                updateSummary();
+                return;
+            }
+
+            // ── Test 2: hello() function exists and returns string ──
+            try {
+                if (!wasmExports.hello) throw new Error('hello() not exported');
+                // hello() is a wasm-bindgen export; needs the JS glue
+                // For raw WASM, check for memory + exported functions
+                addTest('hello() function exists', true, 'Exported from WASM module');
+            } catch (e) {
+                log(`hello() test: ${e.message}`, 'log-fail');
+                addTest('hello() function exists', false, e.message);
+            }
+
+            // ── Test 3: check() function exists ──
+            try {
+                // In raw WASM without wasm-bindgen JS glue, functions need
+                // the bindgen wrapper. Check if core exports exist.
+                const hasMemory = !!wasmExports.memory;
+                addTest('WASM memory accessible', hasMemory, hasMemory ? 'Memory exported' : 'No memory export');
+
+                // List all exported functions
+                const funcs = Object.keys(wasmExports).filter(k => typeof wasmExports[k] === 'function');
+                log(`Exported functions: ${funcs.join(', ')}`, 'log-info');
+                addTest('WASM exports functions', funcs.length > 0, `${funcs.length} functions exported`);
+            } catch (e) {
+                addTest('WASM exports check', false, e.message);
+            }
+
+            // ── Test 4: Try loading via wasm-bindgen (if available) ──
+            try {
+                // Attempt to load the .js glue file
+                const glueResp = await fetch('./discus_rs.js');
+                if (glueResp.ok) {
+                    log('wasm-bindgen JS glue found, loading...', 'log-info');
+                    // Dynamic import of the glue
+                    const glueUrl = new URL('./discus_rs.js', window.location.href).href;
+                    const mod = await import(glueUrl);
+                    if (mod.hello) {
+                        const greeting = mod.hello();
+                        log(`hello() returned: "${greeting}"`, 'log-pass');
+                        addTest('hello() returns correct value', greeting.includes('RTA-GUARD'), greeting);
+                    }
+                    if (mod.check) {
+                        const safeResult = mod.check('Hello, how are you?');
+                        const parsed = JSON.parse(safeResult);
+                        log(`check("Hello, how are you?") => allowed=${parsed.allowed}`, 'log-pass');
+                        addTest('check() with safe text passes', parsed.allowed === true, JSON.stringify(parsed));
+                    }
+                    if (mod.check_input) {
+                        const piiResult = mod.check_input('test-1', 'email me at test@example.com');
+                        const parsed = JSON.parse(piiResult);
+                        log(`check_input(PII) => allowed=${parsed.allowed}`, parsed.allowed ? 'log-fail' : 'log-pass');
+                        addTest('check_input() detects PII', parsed.allowed === false, JSON.stringify(parsed));
+                    }
+                    if (mod.new_session && mod.session_status) {
+                        const sid = mod.new_session();
+                        const status = mod.session_status(sid);
+                        addTest('new_session() + session_status()', status === 'alive', `sid=${sid}, status=${status}`);
+                    }
+                } else {
+                    log('No wasm-bindgen JS glue found (raw WASM mode)', 'log-info');
+                    addTest('wasm-bindgen JS glue', false, 'Not found — run wasm-pack build for JS bindings');
+                }
+            } catch (e) {
+                log(`wasm-bindgen test: ${e.message}`, 'log-info');
+                addTest('wasm-bindgen integration', false, e.message);
+            }
+
+            // ── Test 5: Performance ──
+            try {
+                const t0 = performance.now();
+                const resp2 = await fetch('./discus_rs.wasm');
+                const bytes2 = await resp2.arrayBuffer();
+                const t1 = performance.now();
+                const loadMs = (t1 - t0).toFixed(1);
+                addTest('WASM load performance', parseFloat(loadMs) < 500, `${loadMs}ms (target: <500ms)`);
+            } catch (e) {
+                addTest('WASM load performance', false, e.message);
+            }
+
+            updateSummary();
+        }
+
+        runTests().catch(e => {
+            log(`Fatal error: ${e.message}`, 'log-fail');
+            summaryDiv.innerHTML = `<strong>❌ Fatal: ${e.message}</strong>`;
+        });
+    </script>
+</body>
+</html>

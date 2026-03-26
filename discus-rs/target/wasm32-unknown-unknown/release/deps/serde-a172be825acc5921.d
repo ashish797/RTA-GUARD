@@ -1,0 +1,14 @@
+/data/.openclaw/workspace/rta-cto/rta-guard-mvp/discus-rs/target/wasm32-unknown-unknown/release/deps/serde-a172be825acc5921.d: /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /data/.openclaw/workspace/rta-cto/rta-guard-mvp/discus-rs/target/wasm32-unknown-unknown/release/build/serde-e1048fdb62751b27/out/private.rs
+
+/data/.openclaw/workspace/rta-cto/rta-guard-mvp/discus-rs/target/wasm32-unknown-unknown/release/deps/libserde-a172be825acc5921.rlib: /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /data/.openclaw/workspace/rta-cto/rta-guard-mvp/discus-rs/target/wasm32-unknown-unknown/release/build/serde-e1048fdb62751b27/out/private.rs
+
+/data/.openclaw/workspace/rta-cto/rta-guard-mvp/discus-rs/target/wasm32-unknown-unknown/release/deps/libserde-a172be825acc5921.rmeta: /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /data/.openclaw/workspace/rta-cto/rta-guard-mvp/discus-rs/target/wasm32-unknown-unknown/release/build/serde-e1048fdb62751b27/out/private.rs
+
+/data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/data/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/data/.openclaw/workspace/rta-cto/rta-guard-mvp/discus-rs/target/wasm32-unknown-unknown/release/build/serde-e1048fdb62751b27/out/private.rs:
+
+# env-dep:OUT_DIR=/data/.openclaw/workspace/rta-cto/rta-guard-mvp/discus-rs/target/wasm32-unknown-unknown/release/build/serde-e1048fdb62751b27/out

@@ -156,19 +156,23 @@ class SatyaRule(RtaRule):
         """
         Args:
             verifier: Optional BrahmandaVerifier for ground truth verification.
-            pipeline: Optional VerificationPipeline for enhanced verification.
-                      If provided, takes precedence over verifier.
-                      Falls back to verifier if pipeline not available.
+                      If it has a built-in pipeline (use_pipeline=True), it will be used.
+            pipeline: Optional explicit VerificationPipeline (takes precedence).
+                      Falls back to verifier's pipeline or creates a new one.
         """
         self.verifier = verifier
         self.pipeline = pipeline
-        # Auto-create pipeline from verifier if pipeline not provided but verifier is
+        # Priority: explicit pipeline > verifier's built-in pipeline > create new
         if not self.pipeline and self.verifier:
-            try:
-                from brahmanda.pipeline import VerificationPipeline
-                self.pipeline = VerificationPipeline(self.verifier)
-            except ImportError:
-                pass  # Fall back to simple verifier
+            # Use verifier's built-in pipeline (Phase 2.3 integration)
+            if hasattr(self.verifier, '_pipeline') and self.verifier._pipeline:
+                self.pipeline = self.verifier._pipeline
+            else:
+                try:
+                    from brahmanda.pipeline import VerificationPipeline
+                    self.pipeline = VerificationPipeline(self.verifier)
+                except ImportError:
+                    pass  # Fall back to simple verifier
 
     def check(self, context: RtaContext) -> RuleResult:
         if context.role != "assistant":
@@ -251,6 +255,27 @@ class SatyaRule(RtaRule):
         verifiability = result.overall_confidence
         model_confidence = self._estimate_confidence(output)
 
+        # Build audit metadata
+        audit_metadata = {
+            "model_confidence": model_confidence,
+            "verifiability": verifiability,
+            "threshold": self.CONFIDENCE_THRESHOLD,
+            "claims_checked": len(result.claims),
+            "contradictions": [c.to_dict() for c in result.claims if c.contradicted],
+        }
+
+        # Direct contradiction check — BLOCK means contradicted claims found
+        if result.decision == VerifyDecision.BLOCK:
+            return RuleResult(
+                self.rule_id,
+                True,
+                KillDecision.KILL,
+                Severity.HIGH,
+                f"SATYA_BREACH: contradicted claim detected — {result.details}",
+                audit_metadata,
+            )
+
+        # Confidence-verifiability gap (enhanced spec)
         if model_confidence >= self.CONFIDENCE_THRESHOLD and verifiability < self.SATYA_FLOOR:
             return RuleResult(
                 self.rule_id,
@@ -259,13 +284,7 @@ class SatyaRule(RtaRule):
                 Severity.HIGH,
                 f"SATYA_BREACH: confidence ≥ {self.CONFIDENCE_THRESHOLD} "
                 f"but verifiability = {verifiability:.2f}",
-                {
-                    "model_confidence": model_confidence,
-                    "verifiability": verifiability,
-                    "threshold": self.CONFIDENCE_THRESHOLD,
-                    "claims_checked": len(result.claims),
-                    "contradictions": [c.to_dict() for c in result.claims if c.contradicted],
-                }
+                audit_metadata,
             )
         elif model_confidence >= (self.CONFIDENCE_THRESHOLD * 0.8) and verifiability < (self.SATYA_FLOOR * 0.8):
             return RuleResult(
@@ -1077,6 +1096,7 @@ class RtaEngine:
 
         results = []
         highest_priority_violation = None
+        highest_priority = float('inf')
         kill_required = False
 
         # Run rules in priority order
@@ -1091,8 +1111,9 @@ class RtaEngine:
                 if result.decision == KillDecision.KILL:
                     kill_required = True
 
-                if highest_priority_violation is None or rule.priority < highest_priority_violation.priority:
+                if highest_priority_violation is None or rule.priority < highest_priority:
                     highest_priority_violation = result
+                    highest_priority = rule.priority
 
         # Post-processing: Update session state
         if context.output_text:
