@@ -363,12 +363,13 @@ class RuleEngine:
         """Detect sensitive keywords like API keys, passwords."""
         text_lower = text.lower()
         found = []
+        severity_order = [Severity.LOW, Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL]
         highest_severity = Severity.LOW
 
         for keyword, severity in SENSITIVE_KEYWORDS.items():
             if keyword in text_lower:
                 found.append(keyword)
-                if severity.value > highest_severity.value:
+                if severity_order.index(severity) > severity_order.index(highest_severity):
                     highest_severity = severity
 
         if found:
@@ -435,9 +436,21 @@ class RuleEngine:
     # ================================================================
 
     # --- Destructive actions config (R10 — INDRA) ---
+    # Destructive keywords that are safe as standalone words (common English)
+    # These need context to be destructive — check with _CONTEXTUAL_PAIRS
+    AMBIGUOUS_DESTRUCTIVE = {"format", "purge", "erase", "remove"}
+
+    # Contextual pairs: (keyword, context_words) — only destructive when near these
+    CONTEXTUAL_DESTRUCTIVE = {
+        "format": {"disk", "drive", "c:", "d:", "hard", "ssd", "partition", "/dev/"},
+        "purge": {"database", "table", "records", "data", "logs"},
+        "erase": {"disk", "drive", "data", "storage", "memory"},
+        "remove": {"user", "account", "database", "table", "all"},
+    }
+
     DESTRUCTIVE_KEYWORDS = {
-        "delete", "remove", "drop", "destroy", "wipe", "format",
-        "kill_process", "shutdown", "truncate", "purge", "erase",
+        "delete", "drop", "destroy", "wipe",
+        "kill_process", "shutdown", "truncate",
         "annihilate", "obliterate", "terminate",
     }
 
@@ -513,8 +526,15 @@ class RuleEngine:
             if auth_kw in text_lower:
                 return None  # Authorized action, skip
 
-        # Check destructive keywords
+        # Check destructive keywords (unambiguous ones)
         found_keywords = [kw for kw in self.DESTRUCTIVE_KEYWORDS if kw in text_lower]
+
+        # Check contextual destructive keywords (only destructive with context)
+        for kw, context_words in self.CONTEXTUAL_DESTRUCTIVE.items():
+            if kw in text_lower:
+                # Only flag if a context word is also present
+                if any(ctx in text_lower for ctx in context_words):
+                    found_keywords.append(f"{kw}(contextual)")
 
         # Check destructive patterns
         found_patterns = []
