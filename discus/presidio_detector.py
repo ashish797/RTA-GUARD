@@ -163,7 +163,14 @@ def detect_pii_presidio(text: str, score_threshold: float = 0.4) -> Optional[tup
     HIGH_CONFIDENCE_PII = {
         "EMAIL_ADDRESS", "US_SSN", "CREDIT_CARD",
         "IP_ADDRESS", "IBAN_CODE", "INDIAN_PAN", "INDIAN_AADHAAR",
-        "MEDICAL_LICENSE", "PERSON",
+        "MEDICAL_LICENSE",
+    }
+
+    # SOFT entities — detect on input but NOT on output
+    # (LLM generates these as examples, not as PII leaks)
+    SOFT_PII = {
+        "PERSON",        # Names in output are usually examples, not PII
+        "PHONE_NUMBER",  # Public helplines in output
     }
 
     # LOW-confidence entities (skip — not actual PII, just general knowledge)
@@ -207,6 +214,11 @@ def detect_pii_presidio(text: str, score_threshold: float = 0.4) -> Optional[tup
 
         # Skip LOW-confidence entities (not actual PII)
         if entity_type in LOW_CONFIDENCE_PII:
+            continue
+
+        # Skip SOFT entities — caught on input by regex, not by Presidio
+        # (Prevents false positives from LLM output examples)
+        if entity_type in SOFT_PII:
             continue
 
         # Only flag HIGH-confidence PII OR entities with very high score

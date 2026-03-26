@@ -129,6 +129,20 @@ class NerPiiDetector:
             if ent.label_ in ("GPE", "LOC") and ent.text.lower().strip() in {"here", "there", "everywhere", "nowhere"}:
                 continue
 
+            # Skip common NER false positives (tech terms, common words)
+            if ent.label_ == "PERSON":
+                false_positives = {
+                    "python", "java", "json", "xml", "sql", "api", "http", "https",
+                    "aim", "let", "the", "you", "what", "how", "why", "where",
+                    "when", "who", "which", "that", "this", "these", "those",
+                    "performance", "function", "class", "method", "variable",
+                    "array", "object", "string", "number", "boolean", "null",
+                    "true", "false", "none", "undefined", "nan", "infinity",
+                    "example", "sample", "test", "demo", "hello", "world",
+                }
+                if ent.text.lower().strip() in false_positives:
+                    continue
+
             detected.append({
                 "type": ent.label_,
                 "value": ent.text,

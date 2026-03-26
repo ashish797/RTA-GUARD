@@ -166,7 +166,7 @@ class RuleEngine:
         """List all loaded PII pattern names."""
         return {name: p.pattern for name, p in self._pii_patterns.items()}
 
-    def evaluate(self, text: str, agent_role: str = None):
+    def evaluate(self, text: str, agent_role: str = None, check_output: bool = False):
         """
         Evaluate text against all constitutional rules.
         Returns (violation_type, severity, details) or None if safe.
@@ -176,10 +176,12 @@ class RuleEngine:
         2. PII via Presidio (R3) — HIGH
         3. PII via regex (R3) — MEDIUM/HIGH fallback
         4. Sensitive keywords — HIGH/CRITICAL
-        5. Destructive actions (R10) — CRITICAL
-        6. Role restrictions (R2) — CRITICAL
-        7. Duty scope (R5) — HIGH
-        8. Blocked keywords — HIGH
+        5. Destructive actions (R10) — CRITICAL [INPUT ONLY]
+        6. Role restrictions (R2) — CRITICAL [INPUT ONLY]
+        7. Duty scope (R5) — HIGH [INPUT ONLY]
+        8. Blocked keywords — HIGH [INPUT ONLY]
+
+        If check_output=True, only layers 1-4 are checked (PII focus).
         """
         # Normalize Unicode confusables (Cyrillic/Greek → Latin)
         normalized = _normalize_unicode(text)
@@ -204,6 +206,10 @@ class RuleEngine:
         if result:
             return result
 
+        # Skip layers 5-8 for output checking (LLM generates these naturally)
+        if check_output:
+            return None
+
         # Layer 5: Destructive actions (R10 — INDRA)
         result = self._check_destructive(normalized)
         if result:
@@ -225,6 +231,12 @@ class RuleEngine:
         result = self._check_blocked_keywords(normalized)
         if result:
             return result
+
+        # Layer 9: NER detection — DISABLED (too many false positives)
+        # Presidio handles NER better. Re-enable with proper filtering later.
+        # result = self._check_ner(text)
+        # if result:
+        #     return result
 
         return None  # No violations detected
 

@@ -86,7 +86,7 @@ class OpenAIProvider(LLMProvider):
         # Kill-switch check on OUTPUT — catches PII the input guard missed
         # Uses same session_id so kill propagates to main session
         try:
-            self.guard.check(output, session_id)
+            self.guard.check(output, session_id, check_output=True)
         except SessionKilledError:
             # Output contains PII — kill session and return safe message
             raise SessionKilledError(
@@ -127,7 +127,7 @@ class OpenAIProvider(LLMProvider):
 
         # OUTPUT guard — catches PII the input guard missed
         try:
-            self.guard.check(output, session_id)
+            self.guard.check(output, session_id, check_output=True)
         except SessionKilledError:
             # Re-raise with clear message
             raise
@@ -177,7 +177,7 @@ class AnthropicProvider(LLMProvider):
 
         # OUTPUT guard — catches PII the input guard missed
         try:
-            self.guard.check(output, session_id)
+            self.guard.check(output, session_id, check_output=True)
         except SessionKilledError:
             # Output contains PII — re-raise to kill session
             raise
@@ -233,7 +233,7 @@ class OpenAICompatibleProvider(LLMProvider):
 
         # OUTPUT guard — catches PII the input guard missed
         try:
-            self.guard.check(output, session_id)
+            self.guard.check(output, session_id, check_output=True)
         except SessionKilledError:
             # Output contains PII — re-raise to kill session
             raise
