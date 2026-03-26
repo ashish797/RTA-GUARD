@@ -54,6 +54,8 @@ class GuardConfig(BaseModel):
     kill_threshold: Severity = Severity.HIGH
     # Whether to log all events (including passes)
     log_all: bool = True
+    # Max events in memory (oldest dropped when exceeded; 0 = unlimited)
+    max_events: int = 10000
     # Custom PII patterns (regex)
     pii_patterns: list[str] = Field(default_factory=list)
     # Path to dynamic PII patterns YAML file (auto-detected if not set)

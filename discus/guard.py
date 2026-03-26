@@ -445,8 +445,12 @@ class DiscusGuard:
         return self.rule_engine.list_patterns()
 
     def _log_event(self, event: SessionEvent):
-        """Log an event internally."""
+        """Log an event internally with retention limit."""
         self._event_log.append(event)
+        # Enforce max events retention (drop oldest)
+        if self.config.max_events > 0 and len(self._event_log) > self.config.max_events:
+            # Keep events for killed sessions + recent events
+            self._event_log = self._event_log[-self.config.max_events:]
         # Notify dashboard via websocket if configured
         if self.config.dashboard_ws_url:
             asyncio.create_task(self._notify_dashboard(event))
