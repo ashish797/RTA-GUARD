@@ -208,9 +208,12 @@ class RuleEngine:
             return result
 
         # Check NER-based dynamic detection (uses original text)
-        result = self._check_ner(text)
-        if result:
-            return result
+        # DISABLED: Presidio already handles NER-based detection better
+        # result = self._check_ner(text)
+        # if result:
+        #     return result
+
+        return None  # No violations detected
         if result:
             return result
 

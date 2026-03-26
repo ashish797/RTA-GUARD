@@ -179,13 +179,8 @@ class AnthropicProvider(LLMProvider):
         try:
             self.guard.check(output, session_id)
         except SessionKilledError:
-            raise SessionKilledError(
-                type('FakeEvent', (), {
-                    'session_id': session_id,
-                    'details': 'LLM output contained PII that passed input check',
-                    'decision': type('D', (), {'value': 'kill'})(),
-                })()
-            )
+            # Output contains PII — re-raise to kill session
+            raise
 
         return output
 
@@ -240,13 +235,8 @@ class OpenAICompatibleProvider(LLMProvider):
         try:
             self.guard.check(output, session_id)
         except SessionKilledError:
-            raise SessionKilledError(
-                type('FakeEvent', (), {
-                    'session_id': session_id,
-                    'details': 'LLM output contained PII that passed input check',
-                    'decision': type('D', (), {'value': 'kill'})(),
-                })()
-            )
+            # Output contains PII — re-raise to kill session
+            raise
 
         return output
 

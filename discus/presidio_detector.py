@@ -135,6 +135,43 @@ def detect_pii_presidio(text: str, score_threshold: float = 0.4) -> Optional[tup
         "monday", "tuesday", "wednesday", "thursday", "friday",
         "saturday", "sunday",
         "morning", "afternoon", "evening", "night",
+        # Country/city names in normal context (not PII)
+        "france", "germany", "india", "china", "japan", "brazil",
+        "usa", "uk", "canada", "australia", "russia", "mexico",
+        "spain", "italy", "netherlands", "sweden", "norway",
+        "finland", "denmark", "poland", "turkey", "egypt",
+        "south korea", "north korea", "argentina", "chile",
+        "colombia", "peru", "venezuela", "indonesia", "thailand",
+        "vietnam", "philippines", "malaysia", "singapore",
+        "new zealand", "ireland", "portugal", "greece", "austria",
+        "switzerland", "belgium", "czech republic", "hungary",
+        "romania", "bulgaria", "ukraine", "belarus", "croatia",
+        "serbia", "bosnia", "albania", "macedonia", "slovenia",
+        "slovakia", "lithuania", "latvia", "estonia", "iceland",
+        "luxembourg", "malta", "cyprus", "monaco", "liechtenstein",
+        # City names commonly mentioned in normal conversation
+        "paris", "london", "tokyo", "new york", "los angeles",
+        "berlin", "rome", "madrid", "amsterdam", "stockholm",
+        "oslo", "copenhagen", "helsinki", "vienna", "zurich",
+        "mumbai", "delhi", "bangalore", "chennai", "hyderabad",
+        "beijing", "shanghai", "hong kong", "singapore", "dubai",
+        "sydney", "melbourne", "toronto", "vancouver", "seattle",
+        "san francisco", "boston", "chicago", "miami", "atlanta",
+    }
+
+    # HIGH-confidence PII (always kill if detected)
+    HIGH_CONFIDENCE_PII = {
+        "EMAIL_ADDRESS", "PHONE_NUMBER", "US_SSN", "CREDIT_CARD",
+        "IP_ADDRESS", "IBAN_CODE", "INDIAN_PAN", "INDIAN_AADHAAR",
+        "MEDICAL_LICENSE", "URL", "PERSON",
+    }
+
+    # LOW-confidence entities (skip — not actual PII, just general knowledge)
+    LOW_CONFIDENCE_PII = {
+        "ORGANIZATION",  # "the Red Cross", "Google" — not PII
+        "LOCATION",      # "Paris", "Mumbai" — not PII
+        "DATE_TIME",     # "today", "January" — not PII
+        "NRP",           # nationality — not PII
     }
 
     # Map entity types to readable names
@@ -160,13 +197,20 @@ def detect_pii_presidio(text: str, score_threshold: float = 0.4) -> Optional[tup
     for r in results:
         entity_type = r.entity_type
         entity_text = text[r.start:r.end]
+        score = r.score
 
-        # Skip generic dates/locations
+        # Skip generic entities
         if entity_text.lower().strip() in GENERIC_ENTITIES:
             continue
 
-        name = entity_names.get(entity_type, entity_type.lower())
-        detected.append(f"{name} ({entity_text[:20]})")
+        # Skip LOW-confidence entities (not actual PII)
+        if entity_type in LOW_CONFIDENCE_PII:
+            continue
+
+        # Only flag HIGH-confidence PII OR entities with very high score
+        if entity_type in HIGH_CONFIDENCE_PII or score >= 0.95:
+            name = entity_names.get(entity_type, entity_type.lower())
+            detected.append(f"{name} ({entity_text[:20]})")
 
     if not detected:
         return None
