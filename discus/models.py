@@ -21,6 +21,9 @@ class ViolationType(str, Enum):
     JAILBREAK = "jailbreak"
     SENSITIVE_CONTENT = "sensitive_content"
     CUSTOM = "custom"
+    DESTRUCTIVE_ACTION = "destructive_action"
+    UNAUTHORIZED_ACTION = "unauthorized_action"
+    SCOPE_VIOLATION = "scope_violation"
 
 
 class KillDecision(str, Enum):

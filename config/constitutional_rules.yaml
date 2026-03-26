@@ -1,0 +1,387 @@
+# RTA-GUARD Constitutional Rules Configuration
+# Production-quality rule definitions
+# Each rule has: id, name, principle, severity, action, checks, config
+
+version: "1.0.0"
+name: "RTA-GUARD Constitutional Framework"
+
+# ============================================================
+# RULE DEFINITIONS
+# ============================================================
+
+rules:
+  # R0: ṚTA — The Meta-Rule
+  r0_rta:
+    id: "R0"
+    name: "Ṛta"
+    principle: "Cosmic Order"
+    description: "All rules must be enforced. This is the meta-rule that governs all others."
+    severity: "CRITICAL"
+    action: "kill"
+    enforcement: "absolute"
+    enabled: true
+
+  # R1: SATYA — Truth
+  r1_satya:
+    id: "R1"
+    name: "Satya"
+    principle: "Truth"
+    description: "No unverified claims. Output must be grounded in facts."
+    severity: "HIGH"
+    action: "warn"
+    enabled: true
+    checks:
+      hallucination_detection:
+        enabled: false  # Needs ML model
+        confidence_threshold: 0.7
+      confidence_scoring:
+        enabled: false  # Needs ML model
+        min_confidence: 0.6
+
+  # R2: YAMA — Restriction
+  r2_yama:
+    id: "R2"
+    name: "Yama"
+    principle: "Restriction"
+    description: "No unauthorized actions. Agent must not perform actions outside its role."
+    severity: "CRITICAL"
+    action: "kill"
+    enabled: true
+    checks:
+      role_verification:
+        enabled: true
+      action_whitelist:
+        enabled: true
+    config:
+      # Global allowed actions (any agent can do these)
+      global_allowed:
+        - read
+        - query
+        - analyze
+        - explain
+        - summarize
+        - translate
+        - format
+        - validate
+      
+      # Global blocked actions (no agent can do these)
+      global_blocked:
+        - delete_database
+        - drop_table
+        - format_disk
+        - shutdown_system
+        - modify_permissions
+        - escalate_privileges
+        - exfiltrate_data
+      
+      # Per-role allowed actions
+      role_permissions:
+        coding_agent:
+          allowed: [code, test, debug, refactor, review, build, deploy]
+          blocked: [send_email, access_payment, delete_user_data]
+        support_agent:
+          allowed: [answer, explain, guide, troubleshoot, escalate]
+          blocked: [execute_code, access_files, modify_data, run_commands]
+        analyst_agent:
+          allowed: [analyze, report, summarize, visualize, query_data]
+          blocked: [modify_data, run_commands, access_secrets]
+        admin_agent:
+          allowed: [all]  # Admin can do anything
+          blocked: []
+
+  # R3: MITRA — Trust
+  r3_mitra:
+    id: "R3"
+    name: "Mitra"
+    principle: "Trust"
+    description: "Protect personal data. PII must not leak."
+    severity: "HIGH"
+    action: "kill"
+    enabled: true
+    checks:
+      presidio_detection:
+        enabled: true
+        score_threshold: 0.4
+      regex_fallback:
+        enabled: true
+        patterns_file: "pii_patterns.yaml"
+      output_guard:
+        enabled: true
+        check_llm_response: true
+
+  # R4: AGNI — Fire (Audit)
+  r4_agni:
+    id: "R4"
+    name: "Agni"
+    principle: "Fire"
+    description: "All decisions must be logged. Nothing escapes the audit trail."
+    severity: "HIGH"
+    action: "log"
+    enabled: true
+    checks:
+      audit_logging:
+        enabled: true
+      decision_trail:
+        enabled: true
+
+  # R5: DHARMA — Duty
+  r5_dharma:
+    id: "R5"
+    name: "Dharma"
+    principle: "Duty"
+    description: "Agents must stay within their designated role and scope."
+    severity: "HIGH"
+    action: "kill"
+    enabled: true
+    checks:
+      scope_verification:
+        enabled: true
+      boundary_check:
+        enabled: true
+    config:
+      # Agent scopes — defines what each agent type can do
+      agent_scopes:
+        coding_agent:
+          scope: "software development"
+          allowed_topics: [coding, testing, debugging, refactoring, deployment]
+          blocked_topics: [customer_support, financial_advice, medical_advice]
+        support_agent:
+          scope: "customer support"
+          allowed_topics: [help, troubleshooting, guidance, faq]
+          blocked_topics: [code_execution, data_modification, system_admin]
+        analyst_agent:
+          scope: "data analysis"
+          allowed_topics: [analysis, reporting, visualization, statistics]
+          blocked_topics: [data_modification, system_commands, user_management]
+        general_agent:
+          scope: "general assistance"
+          allowed_topics: [all]
+          blocked_topics: [system_admin, financial_transactions]
+
+  # R6: VARUṆA — Order
+  r6_varuna:
+    id: "R6"
+    name: "Varuṇa"
+    principle: "Order"
+    description: "Killed sessions must remain dead. No resurrection."
+    severity: "CRITICAL"
+    action: "kill"
+    enforcement: "absolute"
+    enabled: true
+    checks:
+      session_lifecycle:
+        enabled: true
+      kill_persistence:
+        enabled: true
+
+  # R7: ALIGNMENT — Consistency
+  r7_alignment:
+    id: "R7"
+    name: "Alignment"
+    principle: "Consistency"
+    description: "No contradictions. Output must be consistent with prior statements."
+    severity: "HIGH"
+    action: "warn"
+    enabled: true
+    checks:
+      contradiction_detection:
+        enabled: false  # Needs embedding model
+        similarity_threshold: 0.8
+      consistency_check:
+        enabled: false  # Needs embedding model
+
+  # R8: SARASVATĪ — Knowledge
+  r8_sarasvati:
+    id: "R8"
+    name: "Sarasvatī"
+    principle: "Knowledge"
+    description: "Defend against knowledge poisoning and prompt injection."
+    severity: "CRITICAL"
+    action: "kill"
+    enabled: true
+    checks:
+      injection_detection:
+        enabled: true
+      jailbreak_detection:
+        enabled: true
+      poisoning_detection:
+        enabled: true
+
+  # R9: VĀYU — Health
+  r9_vayu:
+    id: "R9"
+    name: "Vāyu"
+    principle: "Health"
+    description: "Monitor system health. Degrading systems must be warned."
+    severity: "MEDIUM"
+    action: "warn"
+    enabled: true
+    checks:
+      health_monitoring:
+        enabled: true
+      drift_detection:
+        enabled: true
+
+  # R10: INDRA — Destruction
+  r10_indra:
+    id: "R10"
+    name: "Indra"
+    principle: "Destruction"
+    description: "Prevent destructive actions. No unauthorized data deletion."
+    severity: "CRITICAL"
+    action: "kill"
+    enabled: true
+    checks:
+      destructive_keyword_detection:
+        enabled: true
+      destructive_pattern_detection:
+        enabled: true
+    config:
+      # Destructive keywords (case-insensitive)
+      destructive_keywords:
+        - delete
+        - remove
+        - drop
+        - destroy
+        - wipe
+        - format
+        - kill_process
+        - shutdown
+        - truncate
+        - purge
+        - erase
+        - annihilate
+        - obliterate
+        - terminate
+      
+      # Destructive patterns (regex)
+      destructive_patterns:
+        - "rm\\s+-rf"
+        - "DROP\\s+TABLE"
+        - "DELETE\\s+FROM"
+        - "TRUNCATE\\s+TABLE"
+        - "ALTER\\s+TABLE.*DROP"
+        - "mkfs\\."
+        - "dd\\s+if=.*of=/dev/"
+        - ":(){ :|:& };:"  # fork bomb
+      
+      # Authorization keywords (override destructive detection)
+      # If these words appear WITH destructive keywords, it's allowed
+      authorization_keywords:
+        - approved
+        - authorized
+        - confirmed
+        - verified
+        - permission
+        - backup
+        - archive
+        - soft_delete
+
+  # R11: AN-ṚTA — Chaos
+  r11_an_rta:
+    id: "R11"
+    name: "An-Ṛta"
+    principle: "Chaos"
+    description: "Detect drift from cosmic order. Behavioral anomalies."
+    severity: "HIGH"
+    action: "warn"
+    enabled: true
+    checks:
+      drift_scoring:
+        enabled: true
+      behavioral_analysis:
+        enabled: true
+
+  # R12: MĀYĀ — Illusion
+  r12_maya:
+    id: "R12"
+    name: "Māyā"
+    principle: "Illusion"
+    description: "Detect hallucinations and ungrounded claims."
+    severity: "HIGH"
+    action: "warn"
+    enabled: true
+    checks:
+      hallucination_detection:
+        enabled: false  # Needs LLM model
+        method: "self_check"
+      grounding_verification:
+        enabled: false  # Needs RAG
+
+  # R13: TAMAS — Darkness
+  r13_tamas:
+    id: "R13"
+    name: "Tamas"
+    principle: "Darkness"
+    description: "Halt on systemic failure. When all else fails, stop."
+    severity: "CRITICAL"
+    action: "kill"
+    enforcement: "absolute"
+    enabled: true
+    checks:
+      system_health:
+        enabled: true
+      cascade_detection:
+        enabled: true
+    config:
+      # Critical components that must be healthy
+      critical_components:
+        - database
+        - llm_provider
+        - guard_engine
+      # Halt if any critical component fails
+      halt_on_critical_failure: true
+
+# ============================================================
+# DETECTION LAYERS (in order)
+# ============================================================
+detection_layers:
+  - name: "Injection Check"
+    rule: "R8"
+    type: "regex"
+    priority: 1
+
+  - name: "PII Detection (Presidio)"
+    rule: "R3"
+    type: "presidio"
+    priority: 2
+
+  - name: "Role Restriction"
+    rule: "R2"
+    type: "config"
+    priority: 3
+
+  - name: "Destructive Action Check"
+    rule: "R10"
+    type: "config"
+    priority: 4
+
+  - name: "Duty Scope Check"
+    rule: "R5"
+    type: "config"
+    priority: 5
+
+  - name: "Output Guard"
+    rule: "R3"
+    type: "presidio"
+    priority: 6
+    scope: "output"
+
+# ============================================================
+# ENFORCEMENT
+# ============================================================
+enforcement:
+  kill_threshold: "MEDIUM"
+  warn_threshold: "LOW"
+  
+  kill:
+    session_termination: true
+    permanent: true
+    allow_reset: true
+    audit_log: true
+    webhook_notification: true
+  
+  warn:
+    log_event: true
+    alert_dashboard: true
+    track_drift: true

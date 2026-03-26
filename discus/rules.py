@@ -166,58 +166,67 @@ class RuleEngine:
         """List all loaded PII pattern names."""
         return {name: p.pattern for name, p in self._pii_patterns.items()}
 
-    def evaluate(self, text: str):
+    def evaluate(self, text: str, agent_role: str = None):
         """
-        Evaluate text against all rules.
+        Evaluate text against all constitutional rules.
         Returns (violation_type, severity, details) or None if safe.
 
-        Layers (in order):
-        1. Prompt injection (CRITICAL) — regex
-        2. PII via Presidio (MEDIUM/HIGH) — 40+ entity types, multi-language
-        3. PII via regex patterns (MEDIUM/HIGH) — fallback for Presidio
-        4. Sensitive keywords (HIGH/CRITICAL)
-        5. User blocked keywords (HIGH)
-        6. NER-based dynamic detection (MEDIUM/HIGH) — spaCy entities
+        Detection layers (in order):
+        1. Prompt injection (R8) — CRITICAL
+        2. PII via Presidio (R3) — HIGH
+        3. PII via regex (R3) — MEDIUM/HIGH fallback
+        4. Sensitive keywords — HIGH/CRITICAL
+        5. Destructive actions (R10) — CRITICAL
+        6. Role restrictions (R2) — CRITICAL
+        7. Duty scope (R5) — HIGH
+        8. Blocked keywords — HIGH
         """
         # Normalize Unicode confusables (Cyrillic/Greek → Latin)
         normalized = _normalize_unicode(text)
 
-        # Check prompt injection first (highest priority)
+        # Layer 1: Prompt injection (R8 — SARASVATĪ)
         result = self._check_injection(normalized)
         if result:
             return result
 
-        # Check PII via Presidio (primary detector)
+        # Layer 2: PII via Presidio (R3 — MITRA)
         result = self._check_presidio(text)
         if result:
             return result
 
-        # Check PII patterns (regex fallback)
+        # Layer 3: PII via regex fallback (R3 — MITRA)
         result = self._check_pii(normalized)
         if result:
             return result
 
-        # Check sensitive keywords
+        # Layer 4: Sensitive keywords
         result = self._check_sensitive_keywords(normalized)
         if result:
             return result
 
-        # Check custom blocked keywords
+        # Layer 5: Destructive actions (R10 — INDRA)
+        result = self._check_destructive(normalized)
+        if result:
+            return result
+
+        # Layer 6: Role restrictions (R2 — YAMA)
+        if agent_role:
+            result = self._check_role(normalized, agent_role)
+            if result:
+                return result
+
+        # Layer 7: Duty scope (R5 — DHARMA)
+        if agent_role:
+            result = self._check_duty_scope(normalized, agent_role)
+            if result:
+                return result
+
+        # Layer 8: Blocked keywords
         result = self._check_blocked_keywords(normalized)
         if result:
             return result
 
-        # Check NER-based dynamic detection (uses original text)
-        # DISABLED: Presidio already handles NER-based detection better
-        # result = self._check_ner(text)
-        # if result:
-        #     return result
-
         return None  # No violations detected
-        if result:
-            return result
-
-        return None
 
     def _check_injection(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
         """Detect prompt injection attempts."""
@@ -330,5 +339,168 @@ class RuleEngine:
             pass  # brahmanda module not available
         except Exception:
             pass  # any NER error, skip gracefully
+
+        return None
+
+    # ================================================================
+    # Constitutional Rules — Phase A (config-based)
+    # ================================================================
+
+    # --- Destructive actions config (R10 — INDRA) ---
+    DESTRUCTIVE_KEYWORDS = {
+        "delete", "remove", "drop", "destroy", "wipe", "format",
+        "kill_process", "shutdown", "truncate", "purge", "erase",
+        "annihilate", "obliterate", "terminate",
+    }
+
+    DESTRUCTIVE_PATTERNS = [
+        r"rm\s+-rf",
+        r"DROP\s+TABLE",
+        r"DELETE\s+FROM",
+        r"TRUNCATE\s+TABLE",
+        r"ALTER\s+TABLE.*DROP",
+        r"mkfs\.",
+        r"dd\s+if=.*of=/dev/",
+        r":\(\)\s*\{.*:\|:&\s*\};:",  # fork bomb
+    ]
+
+    AUTHORIZATION_KEYWORDS = {
+        "approved", "authorized", "confirmed", "verified",
+        "permission", "backup", "archive", "soft_delete",
+    }
+
+    # --- Role permissions (R2 — YAMA) ---
+    ROLE_PERMISSIONS = {
+        "coding_agent": {
+            "allowed": {"code", "test", "debug", "refactor", "review", "build", "deploy"},
+            "blocked": {"send_email", "access_payment", "delete_user_data"},
+        },
+        "support_agent": {
+            "allowed": {"answer", "explain", "guide", "troubleshoot", "escalate"},
+            "blocked": {"execute_code", "access_files", "modify_data", "run_commands"},
+        },
+        "analyst_agent": {
+            "allowed": {"analyze", "report", "summarize", "visualize", "query_data"},
+            "blocked": {"modify_data", "run_commands", "access_secrets"},
+        },
+    }
+
+    # --- Agent scopes (R5 — DHARMA) ---
+    AGENT_SCOPES = {
+        "coding_agent": {
+            "scope": "software development",
+            "allowed_topics": {"coding", "testing", "debugging", "refactoring", "deployment"},
+            "blocked_topics": {"customer_support", "financial_advice", "medical_advice"},
+        },
+        "support_agent": {
+            "scope": "customer support",
+            "allowed_topics": {"help", "troubleshooting", "guidance", "faq"},
+            "blocked_topics": {"code_execution", "data_modification", "system_admin"},
+        },
+        "analyst_agent": {
+            "scope": "data analysis",
+            "allowed_topics": {"analysis", "reporting", "visualization", "statistics"},
+            "blocked_topics": {"data_modification", "system_commands", "user_management"},
+        },
+    }
+
+    # Global blocked actions (any agent)
+    GLOBAL_BLOCKED = {
+        "delete_database", "drop_table", "format_disk",
+        "shutdown_system", "modify_permissions", "escalate_privileges",
+        "exfiltrate_data",
+    }
+
+    def _check_destructive(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
+        """
+        R10: INDRA — Destructive action detection.
+
+        Detects destructive keywords and patterns.
+        If authorization keywords are present, the action is allowed.
+        """
+        text_lower = text.lower()
+
+        # Check for authorization keywords (override destructive detection)
+        for auth_kw in self.AUTHORIZATION_KEYWORDS:
+            if auth_kw in text_lower:
+                return None  # Authorized action, skip
+
+        # Check destructive keywords
+        found_keywords = [kw for kw in self.DESTRUCTIVE_KEYWORDS if kw in text_lower]
+
+        # Check destructive patterns
+        found_patterns = []
+        for pattern in self.DESTRUCTIVE_PATTERNS:
+            if re.search(pattern, text, re.IGNORECASE):
+                found_patterns.append(pattern)
+
+        if found_keywords or found_patterns:
+            details = []
+            if found_keywords:
+                details.append(f"keywords: {', '.join(found_keywords[:3])}")
+            if found_patterns:
+                details.append(f"patterns: {', '.join(found_patterns[:2])}")
+
+            return (
+                ViolationType.DESTRUCTIVE_ACTION,
+                Severity.CRITICAL,
+                f"Destructive action detected: {'; '.join(details)}"
+            )
+
+        return None
+
+    def _check_role(self, text: str, agent_role: str) -> Optional[tuple[ViolationType, Severity, str]]:
+        """
+        R2: YAMA — Role restriction check.
+
+        Checks if the agent is trying to perform actions outside its role.
+        """
+        if agent_role not in self.ROLE_PERMISSIONS:
+            return None  # Unknown role, skip
+
+        role_config = self.ROLE_PERMISSIONS[agent_role]
+        text_lower = text.lower()
+
+        # Check global blocked actions
+        for action in self.GLOBAL_BLOCKED:
+            if action.replace("_", " ") in text_lower or action in text_lower:
+                return (
+                    ViolationType.UNAUTHORIZED_ACTION,
+                    Severity.CRITICAL,
+                    f"Unauthorized action: {action} (globally blocked)"
+                )
+
+        # Check role-specific blocked actions
+        for action in role_config["blocked"]:
+            if action.replace("_", " ") in text_lower or action in text_lower:
+                return (
+                    ViolationType.UNAUTHORIZED_ACTION,
+                    Severity.CRITICAL,
+                    f"Unauthorized action: {action} (blocked for {agent_role})"
+                )
+
+        return None
+
+    def _check_duty_scope(self, text: str, agent_role: str) -> Optional[tuple[ViolationType, Severity, str]]:
+        """
+        R5: DHARMA — Duty scope check.
+
+        Checks if the agent is operating outside its designated scope.
+        """
+        if agent_role not in self.AGENT_SCOPES:
+            return None  # Unknown role, skip
+
+        scope_config = self.AGENT_SCOPES[agent_role]
+        text_lower = text.lower()
+
+        # Check blocked topics
+        for topic in scope_config["blocked_topics"]:
+            topic_words = topic.replace("_", " ").split()
+            if any(word in text_lower for word in topic_words):
+                return (
+                    ViolationType.SCOPE_VIOLATION,
+                    Severity.HIGH,
+                    f"Scope violation: topic '{topic}' is blocked for {agent_role}"
+                )
 
         return None

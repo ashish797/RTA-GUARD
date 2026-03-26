@@ -83,12 +83,19 @@ class DiscusGuard:
         """Register a callback for when a session is killed."""
         self._on_kill_callbacks.append(callback)
 
-    def check(self, text: str, session_id: str = "default", user_id: str = "") -> GuardResponse:
+    def check(self, text: str, session_id: str = "default", user_id: str = "", agent_role: str = None) -> GuardResponse:
         """
-        Check input text against all rules.
+        Check input text against all constitutional rules.
 
-        Returns GuardResponse with allowed=True/False.
-        Raises SessionKilledError if kill threshold is met.
+        Args:
+            text: Input text to check
+            session_id: Session identifier
+            user_id: User identifier (for behavior tracking)
+            agent_role: Agent role for R2/R5 checks (e.g., 'coding_agent', 'support_agent')
+
+        Returns:
+            GuardResponse with allowed=True/False.
+            Raises SessionKilledError if kill threshold is met.
         """
         _check_start = time.monotonic() if _metrics_enabled else None
 
@@ -118,7 +125,7 @@ class DiscusGuard:
             raise SessionKilledError(event)
 
         # Layer 1: Pattern-based rules (fast)
-        pattern_result = self.rule_engine.evaluate(text)
+        pattern_result = self.rule_engine.evaluate(text, agent_role=agent_role)
 
         if pattern_result is not None:
             violation_type, severity, details = pattern_result
