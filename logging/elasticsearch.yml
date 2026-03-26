@@ -1,0 +1,31 @@
+# ============================================================
+# Elasticsearch — Single-node dev mode configuration
+# RTA-GUARD Phase 6.3
+# ============================================================
+
+cluster.name: rta-guard-elk
+node.name: rta-guard-es-node
+
+# Single-node discovery (dev mode)
+discovery.type: single-node
+
+# Network
+network.host: 0.0.0.0
+http.port: 9200
+
+# Security (disabled for dev; enable in production)
+xpack.security.enabled: false
+xpack.security.enrollment.enabled: false
+xpack.security.http.ssl.enabled: false
+xpack.security.transport.ssl.enabled: false
+
+# Index settings
+index.number_of_shards: 1
+index.number_of_replicas: 0
+
+# Memory
+indices.memory.index_buffer_size: 10%
+
+# Paths
+path.data: /usr/share/elasticsearch/data
+path.logs: /usr/share/elasticsearch/logs

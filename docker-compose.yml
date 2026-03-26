@@ -29,6 +29,10 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # Prometheus metrics (opt-in)
       - METRICS_ENABLED=${METRICS_ENABLED:-false}
+      # Structured logging (opt-in)
+      - LOG_LEVEL=${LOG_LEVEL:-WARNING}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - LOG_TO_FILE=${LOG_TO_FILE:-true}
     volumes:
       - ./data/dashboard:/app/data
     depends_on:
@@ -156,6 +160,73 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # ---- Elasticsearch (log storage & search) ----
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    container_name: rta-guard-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - ./logging/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      - ./data/elasticsearch:/usr/share/elasticsearch/data
+    ports:
+      - "${ES_PORT:-9200}:9200"
+    networks:
+      - rta-guard-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ---- Logstash (log ingestion pipeline) ----
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.13.0
+    container_name: rta-guard-logstash
+    volumes:
+      - ./logging/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./logging/pipeline.yml:/usr/share/logstash/config/pipelines.yml:ro
+    ports:
+      - "${LOGSTASH_BEATS_PORT:-5044}:5044"
+      - "${LOGSTASH_TCP_PORT:-5000}:5000"
+    networks:
+      - rta-guard-net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9600/_node/stats || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ---- Kibana (log visualization) ----
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.0
+    container_name: rta-guard-kibana
+    volumes:
+      - ./logging/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+    networks:
+      - rta-guard-net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
 
 networks:
   rta-guard-net:

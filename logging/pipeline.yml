@@ -1,0 +1,10 @@
+# ============================================================
+# Logstash Pipeline Registry
+# Defines pipelines for the Logstash instance
+# ============================================================
+
+- pipeline.id: rta-guard
+  path.config: "/usr/share/logstash/pipeline/logstash.conf"
+  pipeline.workers: 2
+  pipeline.batch.size: 125
+  pipeline.batch.delay: 50
