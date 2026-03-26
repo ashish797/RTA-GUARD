@@ -127,6 +127,16 @@ def detect_pii_presidio(text: str, score_threshold: float = 0.4) -> Optional[tup
     if not results:
         return None
 
+    # Generic date/location references that should NOT be flagged
+    GENERIC_ENTITIES = {
+        "that day", "this day", "today", "yesterday", "tomorrow",
+        "now", "recently", "currently", "here", "there",
+        "nowhere", "everywhere", "somewhere",
+        "monday", "tuesday", "wednesday", "thursday", "friday",
+        "saturday", "sunday",
+        "morning", "afternoon", "evening", "night",
+    }
+
     # Map entity types to readable names
     entity_names = {
         "EMAIL_ADDRESS": "email",
@@ -150,9 +160,16 @@ def detect_pii_presidio(text: str, score_threshold: float = 0.4) -> Optional[tup
     for r in results:
         entity_type = r.entity_type
         entity_text = text[r.start:r.end]
-        score = r.score
+
+        # Skip generic dates/locations
+        if entity_text.lower().strip() in GENERIC_ENTITIES:
+            continue
+
         name = entity_names.get(entity_type, entity_type.lower())
         detected.append(f"{name} ({entity_text[:20]})")
+
+    if not detected:
+        return None
 
     if len(detected) >= 2:
         severity = Severity.HIGH
