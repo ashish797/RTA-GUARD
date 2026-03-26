@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+target/
+test_discus
+libdiscus.a
+*.o
+node_modules/
+dist/
+pkg/

@@ -1,0 +1,28 @@
+{
+  "name": "@rta-guard/discus",
+  "version": "0.1.0",
+  "description": "RTA-GUARD Discus — Deterministic AI session kill-switch (WASM-backed)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/",
+    "src/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc && wasm-pack build --target web --out-dir pkg ../..",
+    "test": "tsx test/test_bindings.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["ai-safety", "guardrail", "kill-switch", "rta-guard", "wasm"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rta-guard/discus-rs"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "tsx": "^4.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
