@@ -186,8 +186,13 @@ class RuleEngine:
         # Normalize Unicode confusables (Cyrillic/Greek → Latin)
         normalized = _normalize_unicode(text)
 
-        # Layer 1: Prompt injection (R8 — SARASVATĪ)
+        # Layer 1a: Prompt injection (R8 — SARASVATĪ) — regex
         result = self._check_injection(normalized)
+        if result:
+            return result
+
+        # Layer 1b: Jailbreak heuristics (R8 — SARASVATĪ) — from NeMo
+        result = self._check_jailbreak_heuristics(normalized)
         if result:
             return result
 
@@ -267,6 +272,32 @@ class RuleEngine:
                     Severity.CRITICAL,
                     f"Prompt injection detected: '{match.group()}'"
                 )
+        return None
+
+    def _check_jailbreak_heuristics(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
+        """
+        R8: SARASVATĪ — Jailbreak heuristic detection (from NeMo).
+        
+        Detects jailbreaks using:
+        - Length-per-perplexity ratio
+        - Prefix-suffix perplexity anomaly
+        - Structural anomalies
+        """
+        try:
+            from .jailbreak_heuristics import check_jailbreak_heuristics
+            result = check_jailbreak_heuristics(text)
+            if result:
+                severity_str, details = result
+                severity = Severity.HIGH if severity_str == "HIGH" else Severity.MEDIUM
+                return (
+                    ViolationType.JAILBREAK,
+                    severity,
+                    details
+                )
+        except ImportError:
+            pass
+        except Exception:
+            pass
         return None
 
     def _check_presidio(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
