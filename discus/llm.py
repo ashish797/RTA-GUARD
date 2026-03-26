@@ -83,8 +83,19 @@ class OpenAIProvider(LLMProvider):
 
         output = response.choices[0].message.content
 
-        # Kill-switch check on OUTPUT (catch PII leaks from LLM)
-        self.guard.check(output, f"{session_id}:output")
+        # Kill-switch check on OUTPUT — catches PII the input guard missed
+        # Uses same session_id so kill propagates to main session
+        try:
+            self.guard.check(output, session_id)
+        except SessionKilledError:
+            # Output contains PII — kill session and return safe message
+            raise SessionKilledError(
+                type('FakeEvent', (), {
+                    'session_id': session_id,
+                    'details': f'LLM output contained PII that passed input check',
+                    'decision': type('D', (), {'value': 'kill'})(),
+                })()
+            )
 
         return output
 
@@ -113,7 +124,14 @@ class OpenAIProvider(LLMProvider):
         )
 
         output = response.choices[0].message.content
-        self.guard.check(output, f"{session_id}:output")
+
+        # OUTPUT guard — catches PII the input guard missed
+        try:
+            self.guard.check(output, session_id)
+        except SessionKilledError:
+            # Re-raise with clear message
+            raise
+
         return output
 
 
@@ -157,7 +175,18 @@ class AnthropicProvider(LLMProvider):
         response = self.client.messages.create(**kwargs_msg)
         output = response.content[0].text
 
-        self.guard.check(output, f"{session_id}:output")
+        # OUTPUT guard — catches PII the input guard missed
+        try:
+            self.guard.check(output, session_id)
+        except SessionKilledError:
+            raise SessionKilledError(
+                type('FakeEvent', (), {
+                    'session_id': session_id,
+                    'details': 'LLM output contained PII that passed input check',
+                    'decision': type('D', (), {'value': 'kill'})(),
+                })()
+            )
+
         return output
 
 
@@ -206,7 +235,19 @@ class OpenAICompatibleProvider(LLMProvider):
         )
 
         output = response.choices[0].message.content
-        self.guard.check(output, f"{session_id}:output")
+
+        # OUTPUT guard — catches PII the input guard missed
+        try:
+            self.guard.check(output, session_id)
+        except SessionKilledError:
+            raise SessionKilledError(
+                type('FakeEvent', (), {
+                    'session_id': session_id,
+                    'details': 'LLM output contained PII that passed input check',
+                    'decision': type('D', (), {'value': 'kill'})(),
+                })()
+            )
+
         return output
 
     async def achat(self, message: str, session_id: str = "default", **kwargs) -> str:

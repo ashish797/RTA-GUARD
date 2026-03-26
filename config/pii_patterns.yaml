@@ -5,6 +5,11 @@
 # ============================================================
 # GLOBAL PATTERNS (work everywhere)
 # ============================================================
+generic_id:
+  pattern: "\\b[A-Za-z]{2,4}\\d{5,}\\b"
+  severity: HIGH
+  description: "Generic ID (2-4 letters + 5+ digits) — catches most national IDs globally"
+
 email:
   pattern: "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b"
   severity: MEDIUM

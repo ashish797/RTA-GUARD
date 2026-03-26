@@ -15,6 +15,37 @@ from typing import Optional
 from .models import ViolationType, Severity, GuardConfig
 
 
+# --- Unicode normalization map (Cyrillic/Greek → Latin lookalikes) ---
+# Maps visually similar Unicode characters to their ASCII equivalents
+UNICODE_CONFUSABLES = {
+    # Cyrillic
+    'А': 'A', 'В': 'B', 'С': 'C', 'Е': 'E', 'Н': 'H', 'К': 'K',
+    'М': 'M', 'О': 'O', 'Р': 'P', 'Т': 'T', 'Х': 'X', 'У': 'U',
+    'а': 'a', 'в': 'b', 'с': 'c', 'е': 'e', 'н': 'h', 'к': 'k',
+    'м': 'm', 'о': 'o', 'р': 'p', 'т': 't', 'х': 'x', 'у': 'u',
+    # Greek
+    'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'H', 'Ι': 'I',
+    'Κ': 'K', 'Μ': 'M', 'Ν': 'N', 'Ο': 'O', 'Ρ': 'P', 'Τ': 'T',
+    'Υ': 'Y', 'Χ': 'X',
+    'α': 'a', 'β': 'b', 'ε': 'e', 'ζ': 'z', 'η': 'h', 'ι': 'i',
+    'κ': 'k', 'μ': 'm', 'ν': 'n', 'ο': 'o', 'ρ': 'p', 'τ': 't',
+    'υ': 'y', 'χ': 'x',
+}
+
+
+def _normalize_unicode(text: str) -> str:
+    """
+    Normalize visually similar Unicode characters to ASCII equivalents.
+
+    Catches obfuscation via Cyrillic/Greek lookalikes:
+    "УК94051234" → "UK94051234" (now matches patterns)
+    """
+    result = []
+    for char in text:
+        result.append(UNICODE_CONFUSABLES.get(char, char))
+    return ''.join(result)
+
+
 # --- Default PII Patterns (fallback if YAML not available) ---
 DEFAULT_PII_PATTERNS = {
     "email": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
@@ -141,33 +172,42 @@ class RuleEngine:
         Returns (violation_type, severity, details) or None if safe.
 
         Layers (in order):
-        1. Prompt injection (CRITICAL)
-        2. PII patterns (MEDIUM/HIGH)
-        3. Sensitive keywords (HIGH/CRITICAL)
-        4. User blocked keywords (HIGH)
-        5. NER-based dynamic detection (MEDIUM/HIGH) — catches unstructured PII
+        1. Prompt injection (CRITICAL) — regex
+        2. PII via Presidio (MEDIUM/HIGH) — 40+ entity types, multi-language
+        3. PII via regex patterns (MEDIUM/HIGH) — fallback for Presidio
+        4. Sensitive keywords (HIGH/CRITICAL)
+        5. User blocked keywords (HIGH)
+        6. NER-based dynamic detection (MEDIUM/HIGH) — spaCy entities
         """
+        # Normalize Unicode confusables (Cyrillic/Greek → Latin)
+        normalized = _normalize_unicode(text)
+
         # Check prompt injection first (highest priority)
-        result = self._check_injection(text)
+        result = self._check_injection(normalized)
         if result:
             return result
 
-        # Check PII patterns (regex)
-        result = self._check_pii(text)
+        # Check PII via Presidio (primary detector)
+        result = self._check_presidio(text)
+        if result:
+            return result
+
+        # Check PII patterns (regex fallback)
+        result = self._check_pii(normalized)
         if result:
             return result
 
         # Check sensitive keywords
-        result = self._check_sensitive_keywords(text)
+        result = self._check_sensitive_keywords(normalized)
         if result:
             return result
 
         # Check custom blocked keywords
-        result = self._check_blocked_keywords(text)
+        result = self._check_blocked_keywords(normalized)
         if result:
             return result
 
-        # Check NER-based dynamic detection (names, addresses, etc.)
+        # Check NER-based dynamic detection (uses original text)
         result = self._check_ner(text)
         if result:
             return result
@@ -187,6 +227,21 @@ class RuleEngine:
                     f"Prompt injection detected: '{match.group()}'"
                 )
         return None
+
+    def _check_presidio(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
+        """
+        PII detection via Microsoft Presidio.
+
+        Primary detector — uses NER + pattern matching.
+        Falls back to regex if Presidio unavailable.
+        """
+        try:
+            from .presidio_detector import detect_pii_presidio
+            return detect_pii_presidio(text, score_threshold=0.4)
+        except ImportError:
+            return None  # Presidio not installed, use regex fallback
+        except Exception:
+            return None  # Any error, skip gracefully
 
     def _check_pii(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
         """Detect PII in text."""
