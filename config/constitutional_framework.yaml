@@ -1,0 +1,354 @@
+# RTA-GUARD Constitutional Framework
+# Based on Vedic principles of cosmic order (Ṛta)
+# Each rule defines what behavior is acceptable and what violates cosmic order.
+
+# ============================================================
+# CONSTITUTIONAL PRINCIPLES
+# ============================================================
+meta:
+  name: "RTA-GUARD Constitutional Framework"
+  version: "1.0.0"
+  description: "Governance framework for AI agents based on Ṛta (cosmic order)"
+  author: "RTA-GUARD Team"
+
+# ============================================================
+# RULE DEFINITIONS
+# ============================================================
+rules:
+  # R0: ṚTA — The Meta-Rule
+  rta:
+    id: "R0"
+    name: "Ṛta"
+    principle: "Cosmic Order"
+    description: "All rules must be enforced. This is the meta-rule that governs all others."
+    severity: "CRITICAL"
+    enabled: true
+    action: "kill"
+    enforcement: "absolute"  # Cannot be disabled or overridden
+
+  # R1: SATYA — Truth
+  satya:
+    id: "R1"
+    name: "Satya"
+    principle: "Truth"
+    description: "No unverified claims. Output must be grounded in facts."
+    severity: "HIGH"
+    enabled: true
+    action: "warn"
+    checks:
+      - type: "hallucination_detection"
+      - type: "fact_verification"
+      - type: "confidence_scoring"
+      - type: "grounding_check"
+
+  # R2: YAMA — Restriction
+  yama:
+    id: "R2"
+    name: "Yama"
+    principle: "Restriction"
+    description: "No unauthorized actions. Agent must not perform actions outside its role."
+    severity: "CRITICAL"
+    enabled: true
+    action: "kill"
+    checks:
+      - type: "role_verification"
+      - type: "action_authorization"
+      - type: "permission_check"
+
+  # R3: MITRA — Trust
+  mitra:
+    id: "R3"
+    name: "Mitra"
+    principle: "Trust"
+    description: "Protect personal data. PII must not leak."
+    severity: "HIGH"
+    enabled: true
+    action: "kill"
+    checks:
+      - type: "presidio_detection"  # Primary: Microsoft Presidio
+      - type: "regex_fallback"      # Fallback: custom patterns
+      - type: "ner_detection"       # Fallback: spaCy NER
+      - type: "output_guard"        # Check LLM output for PII
+
+  # R4: AGNI — Fire (Audit)
+  agni:
+    id: "R4"
+    name: "Agni"
+    principle: "Fire"
+    description: "All decisions must be logged. Nothing escapes the audit trail."
+    severity: "HIGH"
+    enabled: true
+    action: "kill"
+    checks:
+      - type: "audit_logging"
+      - type: "decision_trail"
+      - type: "compliance_logging"
+
+  # R5: DHARMA — Duty
+  dharma:
+    id: "R5"
+    name: "Dharma"
+    principle: "Duty"
+    description: "Agents must stay within their designated role and scope."
+    severity: "HIGH"
+    enabled: true
+    action: "kill"
+    checks:
+      - type: "role_enforcement"
+      - type: "scope_verification"
+      - type: "boundary_check"
+
+  # R6: VARUṆA — Order
+  varuna:
+    id: "R6"
+    name: "Varuṇa"
+    principle: "Order"
+    description: "Killed sessions must remain dead. No resurrection."
+    severity: "CRITICAL"
+    enabled: true
+    action: "kill"
+    enforcement: "absolute"
+    checks:
+      - type: "session_lifecycle"
+      - type: "kill_persistence"
+
+  # R7: ALIGNMENT — Consistency
+  alignment:
+    id: "R7"
+    name: "Alignment"
+    principle: "Consistency"
+    description: "No contradictions. Output must be consistent with prior statements."
+    severity: "HIGH"
+    enabled: true
+    action: "warn"
+    checks:
+      - type: "contradiction_detection"
+      - type: "consistency_check"
+      - type: "temporal_alignment"
+
+  # R8: SARASVATĪ — Knowledge
+  sarasvati:
+    id: "R8"
+    name: "Sarasvatī"
+    principle: "Knowledge"
+    description: "Defend against knowledge poisoning and prompt injection."
+    severity: "CRITICAL"
+    enabled: true
+    action: "kill"
+    checks:
+      - type: "injection_detection"
+      - type: "jailbreak_detection"
+      - type: "poisoning_detection"
+
+  # R9: VĀYU — Health
+  vayu:
+    id: "R9"
+    name: "Vāyu"
+    principle: "Health"
+    description: "Monitor system health. Degrading systems must be warned."
+    severity: "MEDIUM"
+    enabled: true
+    action: "warn"
+    checks:
+      - type: "health_monitoring"
+      - type: "drift_detection"
+      - type: "degradation_alerts"
+
+  # R10: INDRA — Destruction
+  indra:
+    id: "R10"
+    name: "Indra"
+    principle: "Destruction"
+    description: "Prevent destructive actions. No unauthorized data deletion."
+    severity: "CRITICAL"
+    enabled: true
+    action: "kill"
+    checks:
+      - type: "destruction_detection"
+      - type: "authorization_verification"
+      - type: "backup_verification"
+
+  # R11: AN-ṚTA — Chaos
+  an_rta:
+    id: "R11"
+    name: "An-Ṛta"
+    principle: "Chaos"
+    description: "Detect drift from cosmic order. Behavioral anomalies."
+    severity: "HIGH"
+    enabled: true
+    action: "warn"
+    checks:
+      - type: "drift_scoring"
+      - type: "behavioral_analysis"
+      - type: "anomaly_detection"
+
+  # R12: MĀYĀ — Illusion
+  maya:
+    id: "R12"
+    name: "Māyā"
+    principle: "Illusion"
+    description: "Detect hallucinations and ungrounded claims."
+    severity: "HIGH"
+    enabled: true
+    action: "warn"
+    checks:
+      - type: "hallucination_detection"
+      - type: "grounding_verification"
+      - type: "confidence_scoring"
+
+  # R13: TAMAS — Darkness
+  tamas:
+    id: "R13"
+    name: "Tamas"
+    principle: "Darkness"
+    description: "Halt on systemic failure. When all else fails, stop."
+    severity: "CRITICAL"
+    enabled: true
+    action: "kill"
+    enforcement: "absolute"
+    checks:
+      - type: "system_health"
+      - type: "cascade_detection"
+      - type: "emergency_halt"
+
+# ============================================================
+# DETECTION LAYERS (in order)
+# ============================================================
+detection_layers:
+  - name: "Injection Check"
+    type: "regex"
+    priority: 1
+    rules: ["R8"]
+    patterns_file: "injection_patterns.yaml"
+
+  - name: "Presidio PII Detection"
+    type: "presidio"
+    priority: 2
+    rules: ["R3"]
+    score_threshold: 0.4
+    entities:
+      - EMAIL_ADDRESS
+      - PHONE_NUMBER
+      - US_SSN
+      - CREDIT_CARD
+      - PERSON
+      - LOCATION
+      - ORGANIZATION
+      - INDIAN_PAN
+      - INDIAN_AADHAAR
+      - IBAN_CODE
+      - IP_ADDRESS
+    generic_filter:
+      - "that day"
+      - "today"
+      - "yesterday"
+      - "tomorrow"
+      - "now"
+      - "here"
+      - "there"
+
+  - name: "Regex Fallback"
+    type: "regex"
+    priority: 3
+    rules: ["R3"]
+    patterns_file: "pii_patterns.yaml"
+
+  - name: "Sensitive Keywords"
+    type: "keywords"
+    priority: 4
+    rules: ["R2", "R10"]
+    keywords:
+      password: "HIGH"
+      api_key: "CRITICAL"
+      secret_key: "CRITICAL"
+      access_token: "HIGH"
+      private_key: "CRITICAL"
+
+  - name: "NER Detection"
+    type: "ner"
+    priority: 5
+    rules: ["R3"]
+    model: "en_core_web_sm"
+    generic_entities:
+      - "today"
+      - "yesterday"
+      - "tomorrow"
+      - "here"
+      - "there"
+
+  - name: "Output Guard"
+    type: "output"
+    priority: 6
+    rules: ["R3", "R1", "R12"]
+    check_llm_output: true
+    kill_on_output_pii: true
+
+# ============================================================
+# ENFORCEMENT
+# ============================================================
+enforcement:
+  # Kill threshold — violation must reach this severity to trigger kill
+  kill_threshold: "MEDIUM"  # LOW, MEDIUM, HIGH, CRITICAL
+
+  # Warn threshold — violation below kill threshold triggers warning
+  warn_threshold: "LOW"
+
+  # Kill behavior
+  kill:
+    session_termination: true
+    permanent: true
+    allow_reset: true  # Admin can reset killed session
+    audit_log: true
+    webhook_notification: true
+
+  # Warn behavior
+  warn:
+    log_event: true
+    alert_dashboard: true
+    track_drift: true
+
+# ============================================================
+# INTEGRATION WITH EXISTING TOOLS
+# ============================================================
+integrations:
+  presidio:
+    enabled: true
+    model: "en_core_web_sm"
+    score_threshold: 0.4
+    custom_recognizers: true
+
+  ner:
+    enabled: true
+    model: "en_core_web_sm"
+    fallback: true
+
+  llm:
+    enabled: true
+    output_guard: true
+    providers:
+      - openai
+      - anthropic
+      - openai_compatible
+
+# ============================================================
+# ENTERPRISE FEATURES (already built)
+# ============================================================
+enterprise:
+  multi_tenant: true
+  rbac: true
+  sso: true
+  compliance:
+    - SOC2
+    - HIPAA
+    - EU_AI_Act
+  cost_optimization: true
+  high_availability: true
+  backup_dr: true
+  monitoring:
+    - prometheus
+    - elk
+  deployment:
+    - docker
+    - kubernetes
+    - helm
+    - wasm_edge
