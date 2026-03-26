@@ -24,6 +24,9 @@ class ViolationType(str, Enum):
     DESTRUCTIVE_ACTION = "destructive_action"
     UNAUTHORIZED_ACTION = "unauthorized_action"
     SCOPE_VIOLATION = "scope_violation"
+    UNVERIFIED_CLAIM = "unverified_claim"
+    HALLUCINATION = "hallucination"
+    INCONSISTENCY = "inconsistency"
 
 
 class KillDecision(str, Enum):

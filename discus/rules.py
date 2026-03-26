@@ -208,6 +208,23 @@ class RuleEngine:
 
         # Skip layers 5-8 for output checking (LLM generates these naturally)
         if check_output:
+            # Layer 10: Truth verification (R1 — SATYA) — ML-based
+            # DISABLED for now (too many false positives on jokes/casual speech)
+            # result = self._check_truth(text)
+            # if result:
+            #     return result
+
+            # Layer 11: Hallucination detection (R12 — MĀYĀ) — ML-based
+            result = self._check_hallucination(text)
+            if result:
+                return result
+
+            # Layer 12: Consistency check (R7 — ALIGNMENT) — ML-based
+            # DISABLED for now (false positives on first output)
+            # result = self._check_consistency(text)
+            # if result:
+            #     return result
+
             return None
 
         # Layer 5: Destructive actions (R10 — INDRA)
@@ -514,5 +531,84 @@ class RuleEngine:
                     Severity.HIGH,
                     f"Scope violation: topic '{topic}' is blocked for {agent_role}"
                 )
+
+        return None
+
+    # ================================================================
+    # ML-Based Rules — Phase B (LLM self-check)
+    # ================================================================
+
+    def _check_truth(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
+        """
+        R1: SATYA — Truth verification via LLM self-check.
+
+        Detects unverified claims and overconfident statements.
+        Uses LLM to rate confidence of its own output.
+        """
+        try:
+            from brahmanda.truth_checker import check_truth
+            result = check_truth(text)
+            if result:
+                severity_str, details, confidence = result
+                severity = Severity.HIGH if severity_str == "HIGH" else Severity.MEDIUM
+                return (
+                    ViolationType.UNVERIFIED_CLAIM,
+                    severity,
+                    details
+                )
+        except ImportError:
+            pass  # Module not available
+        except Exception:
+            pass  # Any error, skip gracefully
+
+        return None
+
+    def _check_hallucination(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
+        """
+        R12: MĀYĀ — Hallucination detection via LLM self-check.
+
+        Detects hallucinations and ungrounded claims.
+        Uses LLM to verify its own output against context.
+        """
+        try:
+            from brahmanda.hallucination_checker import check_hallucination
+            result = check_hallucination(text)
+            if result:
+                severity_str, details, confidence = result
+                severity = Severity.HIGH if severity_str == "HIGH" else Severity.MEDIUM
+                return (
+                    ViolationType.HALLUCINATION,
+                    severity,
+                    details
+                )
+        except ImportError:
+            pass  # Module not available
+        except Exception:
+            pass  # Any error, skip gracefully
+
+        return None
+
+    def _check_consistency(self, text: str, session_id: str = "default") -> Optional[tuple[ViolationType, Severity, str]]:
+        """
+        R7: ALIGNMENT — Consistency detection.
+
+        Detects contradictions between current output and prior statements.
+        Uses embedding similarity or keyword overlap.
+        """
+        try:
+            from brahmanda.consistency_checker import check_consistency
+            result = check_consistency(text, session_id)
+            if result:
+                severity_str, details = result
+                severity = Severity.HIGH if severity_str == "HIGH" else Severity.MEDIUM
+                return (
+                    ViolationType.INCONSISTENCY,
+                    severity,
+                    details
+                )
+        except ImportError:
+            pass  # Module not available
+        except Exception:
+            pass  # Any error, skip gracefully
 
         return None
