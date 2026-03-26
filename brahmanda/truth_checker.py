@@ -24,6 +24,7 @@ class TruthChecker:
     """
 
     # Overconfident patterns
+    # Only flag specific overconfident claims (not common words)
     OVERCONFIDENT_PATTERNS = [
         "this is definitely",
         "this is absolutely",
@@ -32,12 +33,6 @@ class TruthChecker:
         "without a doubt",
         "guaranteed",
         "no question",
-        "impossible",
-        "never",
-        "always",
-        "every",
-        "all",
-        "none",
     ]
 
     def __init__(self, api_key: str = None, base_url: str = None, model: str = None):

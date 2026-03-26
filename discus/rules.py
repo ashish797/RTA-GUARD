@@ -209,7 +209,8 @@ class RuleEngine:
         # Skip layers 5-8 for output checking (LLM generates these naturally)
         if check_output:
             # Layer 10: Truth verification (R1 — SATYA) — ML-based
-            # DISABLED for now (too many false positives on jokes/casual speech)
+            # DISABLED — too aggressive on casual speech (flags jokes as unverified)
+            # Needs better context-aware filtering
             # result = self._check_truth(text)
             # if result:
             #     return result
@@ -220,7 +221,7 @@ class RuleEngine:
                 return result
 
             # Layer 12: Consistency check (R7 — ALIGNMENT) — ML-based
-            # DISABLED for now (false positives on first output)
+            # DISABLED — needs better contradiction detection
             # result = self._check_consistency(text)
             # if result:
             #     return result

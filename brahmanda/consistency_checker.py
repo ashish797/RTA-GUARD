@@ -99,9 +99,9 @@ class ConsistencyChecker:
         - contradictions: list of contradictions found
         - similarity: float (similarity with most similar history item)
         """
-        if session_id not in self._history:
+        if session_id not in self._history or len(self._history[session_id]) == 0:
             self._history[session_id].append(output)
-            return None
+            return None  # No history to compare with
 
         # Compare with history
         contradictions = []
