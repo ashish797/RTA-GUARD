@@ -34,6 +34,10 @@ try:
 except ImportError:
     _metrics_enabled = False
 
+# Placeholders — initialized properly later in the file
+webhook_manager = None
+sla_tracker = None
+
 # Initialize Brahmanda Map — Qdrant if QDRANT_URL set, else in-memory
 brahmanda_backend = os.getenv("BRAHMANDA_BACKEND", "auto")
 if brahmanda_backend == "qdrant" or (brahmanda_backend == "auto" and os.getenv("QDRANT_URL")):
@@ -60,6 +64,10 @@ try:
 except ImportError:
     verification_pipeline = None
     logger.info("VerificationPipeline not available, using simple verifier")
+
+# Data directory (must be defined before modules that reference it)
+data_dir = os.getenv("RTA_DATA_DIR", "data")
+os.makedirs(data_dir, exist_ok=True)
 
 # Initialize Rate Limiting (Phase 4.7)
 try:
@@ -179,7 +187,6 @@ auth = init_auth(auth_config)
 
 # Initialize Tenant Manager (Phase 4.1)
 from brahmanda.tenancy import TenantManager, get_tenant_manager, validate_tenant_id
-data_dir = os.getenv("RTA_DATA_DIR", "data")
 tenant_manager = get_tenant_manager(base_data_dir=data_dir)
 
 # Initialize RBAC Manager (Phase 4.2)
@@ -1048,7 +1055,6 @@ except ImportError:
     logger.warning("Webhook module not available")
 
 # Initialize WebhookManager
-webhook_manager = None
 if _webhooks_available:
     try:
         webhook_manager = get_webhook_manager(
