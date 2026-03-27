@@ -81,7 +81,8 @@ class RtaGuardCallbackHandler:
     def __init__(self, session_id: Optional[str] = None,
                  check_input: bool = True, check_output: bool = True,
                  on_violation: Optional[str] = "raise",
-                 guard: Optional[DiscusGuard] = None):
+                 guard: Optional[DiscusGuard] = None,
+                 memory_manager: Optional[Any] = None):
         """
         Args:
             session_id: Session identifier (auto-generated if None)
@@ -89,12 +90,14 @@ class RtaGuardCallbackHandler:
             check_output: Check LLM outputs before returning
             on_violation: What to do on violation: "raise", "warn", "block"
             guard: Custom DiscusGuard instance (uses shared if None)
+            memory_manager: Optional MemoryManager for conversation tracking
         """
         self.session_id = session_id or f"lc-{uuid.uuid4().hex[:8]}"
         self.check_input = check_input
         self.check_output = check_output
         self.on_violation = on_violation
         self.guard = guard or get_guard()
+        self.memory_manager = memory_manager
         self._violations: List[Dict[str, Any]] = []
         self._last_input: str = ""
         self._last_output: str = ""
@@ -172,6 +175,12 @@ class RtaGuardCallbackHandler:
 
         if text:
             self._last_output = text
+            # Add to conversation memory
+            if self.memory_manager:
+                try:
+                    self.memory_manager.add_assistant_message(self.session_id, text)
+                except Exception:
+                    pass
             violation = self._check(text, is_output=True)
             if violation and self.on_violation == "raise":
                 self._handle_violation(violation)
