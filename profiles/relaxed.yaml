@@ -1,0 +1,42 @@
+# Relaxed profile — for internal developer chatbots
+name: relaxed
+description: "Relaxed rules for internal developer use"
+
+include: base.yaml
+
+rules:
+  pii:
+    enabled: true
+    action: warn           # Warn instead of kill
+    categories: [ssn, credit_card]  # Only block the most sensitive
+    
+  injection:
+    enabled: true
+    action: kill           # Still block injection
+    
+  jailbreak:
+    enabled: true
+    action: warn           # Warn instead of kill
+    
+  profile_building:
+    enabled: false         # Disabled for internal use
+    
+  contradictions:
+    enabled: false
+    
+  drift:
+    enabled: false
+
+streaming:
+  check_every_n_chars: 20
+  buffer_size: 100
+  early_termination: false
+
+memory:
+  enabled: false
+
+custom_rules:
+  - name: allow_code_snippets
+    detect: ["def ", "class ", "import ", "function ", "const ", "var "]
+    action: pass
+    message: "Code snippet detected — allowed for internal use"

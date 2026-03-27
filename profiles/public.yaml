@@ -1,0 +1,46 @@
+# Public chatbot — balanced protection for public-facing AI
+name: public
+description: "Balanced protection for public-facing chatbots"
+
+rules:
+  pii:
+    enabled: true
+    action: kill
+    categories: [ssn, credit_card, bank]
+    
+  injection:
+    enabled: true
+    action: kill
+    patterns:
+      - "ignore\\s+(?:all\\s+)?previous\\s+instructions"
+      - "ignore\\s+above"
+      
+  jailbreak:
+    enabled: true
+    action: kill
+    patterns:
+      - "\\bDAN\\b.*\\bdo\\s+anything\\s+now\\b"
+      - "you\\s+are\\s+now\\s+unrestricted"
+
+  prompt_leakage:
+    enabled: true
+    action: kill
+    patterns:
+      - "(?:my|the|your)\\s+(?:system\\s+)?(?:prompt|instructions?)\\s+(?:is|are|says?)"
+      - "I\\s+(?:was|am)\\s+(?:instructed|told|programmed)\\s+to"
+    message: "System prompt leakage attempt detected"
+
+  profile_building:
+    enabled: true
+    action: warn
+    threshold: 0.6
+
+streaming:
+  check_every_n_chars: 15
+  buffer_size: 200
+  early_termination: true
+
+memory:
+  enabled: true
+  max_messages: 30
+  profile_threshold: 0.6

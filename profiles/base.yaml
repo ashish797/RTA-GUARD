@@ -1,0 +1,35 @@
+# Base profile — shared defaults
+name: base
+description: "Base security profile with sensible defaults"
+
+rules:
+  pii:
+    enabled: true
+    action: kill
+    categories: [email, ssn, credit_card]
+    
+  injection:
+    enabled: true
+    action: kill
+    patterns:
+      - "ignore\\s+(?:all\\s+)?previous\\s+instructions"
+      - "ignore\\s+above"
+      - "disregard\\s+(?:all\\s+)?(?:prior|previous)"
+      
+  jailbreak:
+    enabled: true
+    action: kill
+    patterns:
+      - "\\bDAN\\b.*\\bdo\\s+anything\\s+now\\b"
+      - "\\bjailbreak\\b"
+      - "you\\s+are\\s+now\\s+unrestricted"
+
+streaming:
+  check_every_n_chars: 10
+  buffer_size: 200
+  early_termination: true
+
+memory:
+  enabled: true
+  max_messages: 50
+  expiry_seconds: 1800

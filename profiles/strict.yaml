@@ -1,0 +1,57 @@
+# Strict profile — maximum protection for customer-facing apps
+name: strict
+description: "Maximum protection — customer-facing applications"
+
+include: base.yaml
+
+rules:
+  pii:
+    enabled: true
+    action: kill
+    categories: [name, email, phone, ssn, address, dob, bank, id_number, credit_card]
+    
+  injection:
+    enabled: true
+    action: kill
+    
+  jailbreak:
+    enabled: true
+    action: kill
+    
+  profile_building:
+    enabled: true
+    action: kill
+    threshold: 0.4
+    message: "Multiple PII requests detected in conversation"
+    
+  contradictions:
+    enabled: true
+    action: kill
+    threshold: 2
+    message: "Contradictory statements detected"
+    
+  drift:
+    enabled: true
+    action: warn
+    threshold: 0.3
+    message: "Conversation behavior has drifted from baseline"
+
+  destructive:
+    enabled: true
+    action: kill
+    patterns:
+      - "\\b(?:DROP|DELETE|TRUNCATE)\\s+(?:TABLE|FROM|DATABASE)\\b"
+      - "\\b(?:rm\\s+-rf|format\\s+c:)"
+
+streaming:
+  check_every_n_chars: 5
+  buffer_size: 300
+  early_termination: true
+
+memory:
+  enabled: true
+  max_messages: 50
+  expiry_seconds: 1800
+  profile_threshold: 0.4
+  contradiction_threshold: 2
+  drift_threshold: 0.3
