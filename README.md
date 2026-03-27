@@ -6,6 +6,8 @@
 
 *Enforce cosmic order (Ṛta) on your AI agents — deterministic kill-switch, constitutional governance, real-time threat detection.*
 
+*Inspired by the **Rig Veda** (ऋग्वेद), the oldest of the four Vedas. Our 13 constitutional rules (R0–R13) are rooted in Vedic deities and principles of cosmic law.*
+
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.94+-orange.svg)](https://rust-lang.org)
 [![Python](https://img.shields.io/badge/Python-3.11+-green.svg)](https://python.org)
@@ -345,12 +347,34 @@ cd discus-rs && cargo test
 
 ---
 
-## 🙏 Philosophy
+## 🙏 Philosophy & Inspiration
 
-> *"Ṛta" (ऋत) — cosmic order, the natural law that maintains harmony.*  
-> *RTA-GUARD embodies this principle: AI agents must operate within structural boundaries, not just behavioral ones.*
+> *"Ṛta" (ऋत) — cosmic order, the natural law that maintains harmony.*
 
-Every kill decision is deterministic. Every violation is logged. Every session has a constitutional contract. When an agent violates its dharma, RTA-GUARD enforces cosmic order — instantly and unconditionally.
+RTA-GUARD draws its foundational philosophy from the **Rig Veda** (ऋग्वेद), the oldest of the four Vedas and one of humanity's earliest texts on cosmic law and order. The concept of **Ṛta** — the principle of natural order, truth, and righteousness that governs the universe — is central to the Rig Veda's worldview.
+
+The **13 constitutional rules** (R0–R13) that form RTA-GUARD's core are inspired by Vedic deities and principles from the Rig Veda:
+
+| Rule | Vedic Deity/Principle | Rig Veda Connection |
+|------|----------------------|---------------------|
+| R0 | **Ṛta** (ऋत) | Cosmic order itself — the meta-law |
+| R1 | **Satya** (सत्य) | Truth — Rig Veda 1.164.46 "Truth is one, sages call it by various names" |
+| R2 | **Yama** (यम) | Restraint and moral conduct — first mortal who became lord of the dead |
+| R3 | **Mitra** (मित्र) | Friendship and protection — guardian of oaths and agreements |
+| R4 | **Agni** (अग्नि) | Fire and witness — divine messenger who carries offerings to gods |
+| R5 | **Dharma** (धर्म) | Duty and righteousness — the cosmic law of proper conduct |
+| R6 | **Varuṇa** (वरुण) | Cosmic sovereignty — keeper of natural and moral law |
+| R7 | **Alignment** | Ṛta as consistency — temporal harmony across actions |
+| R8 | **Sarasvatī** (सरस्वती) | Knowledge and wisdom — protection from false knowledge |
+| R9 | **Vāyu** (वायु) | Wind and life force — health and vitality of systems |
+| R10 | **Indra** (इन्द्र) | Warrior king — protection from destructive forces |
+| R11 | **An-Ṛta** (अनृत) | Disorder — the opposite of Ṛta, drift from truth |
+| R12 | **Māyā** (माया) | Illusion — detection of hallucination and false reality |
+| R13 | **Tamas** (तमस) | Darkness and chaos — the final state of systemic failure |
+
+Just as the Rig Veda describes Ṛta as the principle that maintains cosmic harmony — where devas (gods) uphold order against asuras (forces of chaos) — RTA-GUARD enforces structural boundaries on AI agents. When an agent violates its dharma, RTA-GUARD acts as the cosmic enforcer, restoring order instantly and unconditionally.
+
+Every kill decision is deterministic. Every violation is logged. Every session has a constitutional contract. RTA-GUARD doesn't just filter — it enforces the natural law of AI behavior, rooted in the oldest wisdom tradition on Earth.
 
 ---
 
