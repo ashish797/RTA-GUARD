@@ -244,15 +244,42 @@ class RtaGuardChatEngine:
         engine = index.as_chat_engine()
         protected = RtaGuardChatEngine(engine)
         response = protected.chat("Tell me about this document")
+
+        # Stream with early termination
+        for chunk in protected.stream_chat("Explain quantum computing"):
+            print(chunk, end="", flush=True)
     """
 
     def __init__(self, inner_engine: Any, session_id: Optional[str] = None,
                  on_violation: str = "raise",
-                 guard: Optional[DiscusGuard] = None):
+                 guard: Optional[DiscusGuard] = None,
+                 buffer_size: int = 200,
+                 check_every_n_chars: int = 10):
         self.inner = inner_engine
         self.session_id = session_id or f"li-chat-{uuid.uuid4().hex[:8]}"
         self.on_violation = on_violation
         self.guard = guard or get_guard()
+        self.buffer_size = buffer_size
+        self.check_every_n_chars = check_every_n_chars
+        self._streaming_guard = None
+
+    def _get_streaming_guard(self):
+        if self._streaming_guard is None or self._streaming_guard.is_killed:
+            from discus.streaming import StreamingGuard
+            self._streaming_guard = StreamingGuard(
+                guard=self.guard,
+                session_id=self.session_id,
+                on_violation=self.on_violation,
+                buffer_size=self.buffer_size,
+                check_every_n_chars=self.check_every_n_chars,
+            )
+        return self._streaming_guard
+
+    @property
+    def streaming_metrics(self):
+        if self._streaming_guard:
+            return self._streaming_guard.metrics
+        return None
 
     def _check(self, text: str, is_output: bool = False):
         if not text:
@@ -276,16 +303,34 @@ class RtaGuardChatEngine:
         return response
 
     def stream_chat(self, message: str, **kwargs):
-        """Stream chat with per-chunk protection."""
+        """Stream chat with per-chunk protection and early termination."""
         self._check(message, is_output=False)
+
+        sguard = self._get_streaming_guard()
+        sguard.reset()
+
         streaming_response = self.inner.stream_chat(message, **kwargs)
         for chunk in streaming_response.response_gen:
-            self._check(str(chunk), is_output=True)
-            yield chunk
+            chunk_str = str(chunk)
+            result = sguard.process_chunk(chunk_str)
+
+            if result.should_stop:
+                if result.raise_error:
+                    sguard.complete()
+                    raise RuntimeError(f"RTA-GUARD streaming blocked: {result.reason}")
+                if result.replacement_text:
+                    yield result.replacement_text
+                sguard.complete()
+                return
+
+            yield result.chunk
+
+        sguard.complete()
 
     def reset(self):
         if hasattr(self.inner, "reset"):
             self.inner.reset()
+        self._streaming_guard = None
 
     def __getattr__(self, name: str):
         return getattr(self.inner, name)

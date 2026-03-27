@@ -380,11 +380,16 @@ class RtaGuardRunnable:
 
     def __init__(self, inner_runnable: Any, session_id: Optional[str] = None,
                  on_violation: str = "raise",
-                 guard: Optional[DiscusGuard] = None):
+                 guard: Optional[DiscusGuard] = None,
+                 buffer_size: int = 200,
+                 check_every_n_chars: int = 10):
         self.inner = inner_runnable
         self.session_id = session_id or f"lc-{uuid.uuid4().hex[:8]}"
         self.on_violation = on_violation
         self.guard = guard or get_guard()
+        self.buffer_size = buffer_size
+        self.check_every_n_chars = check_every_n_chars
+        self._streaming_guard = None
 
     def _extract_text(self, data: Any) -> str:
         """Extract text from various input/output formats."""
@@ -420,23 +425,71 @@ class RtaGuardRunnable:
         self._check_text(self._extract_text(result), is_output=True)
         return result
 
+    def _get_streaming_guard(self):
+        """Get or create a StreamingGuard instance."""
+        if self._streaming_guard is None or self._streaming_guard.is_killed:
+            from discus.streaming import StreamingGuard
+            self._streaming_guard = StreamingGuard(
+                guard=self.guard,
+                session_id=self.session_id,
+                on_violation=self.on_violation,
+                buffer_size=self.buffer_size,
+                check_every_n_chars=self.check_every_n_chars,
+            )
+        return self._streaming_guard
+
+    @property
+    def streaming_metrics(self):
+        """Get streaming metrics from last stream operation."""
+        if self._streaming_guard:
+            return self._streaming_guard.metrics
+        return None
+
     def stream(self, input_data: Any, config: Optional[Any] = None, **kwargs):
-        """Stream with per-chunk protection."""
+        """Stream with per-chunk protection and early termination."""
         self._check_text(self._extract_text(input_data), is_output=False)
+
+        sguard = self._get_streaming_guard()
+        sguard.reset()
+
         for chunk in self.inner.stream(input_data, config=config, **kwargs):
             chunk_text = self._extract_text(chunk)
             if chunk_text:
-                self._check_text(chunk_text, is_output=True)
+                result = sguard.process_chunk(chunk_text)
+                if result.should_stop:
+                    if result.raise_error:
+                        sguard.complete()
+                        raise RuntimeError(f"RTA-GUARD streaming blocked: {result.reason}")
+                    if result.replacement_text:
+                        yield result.replacement_text
+                    sguard.complete()
+                    return
             yield chunk
 
+        sguard.complete()
+
     async def astream(self, input_data: Any, config: Optional[Any] = None, **kwargs):
-        """Async stream with per-chunk protection."""
+        """Async stream with per-chunk protection and early termination."""
         self._check_text(self._extract_text(input_data), is_output=False)
+
+        sguard = self._get_streaming_guard()
+        sguard.reset()
+
         async for chunk in self.inner.astream(input_data, config=config, **kwargs):
             chunk_text = self._extract_text(chunk)
             if chunk_text:
-                self._check_text(chunk_text, is_output=True)
+                result = await sguard.process_chunk_async(chunk_text)
+                if result.should_stop:
+                    if result.raise_error:
+                        sguard.complete()
+                        raise RuntimeError(f"RTA-GUARD streaming blocked: {result.reason}")
+                    if result.replacement_text:
+                        yield result.replacement_text
+                    sguard.complete()
+                    return
             yield chunk
+
+        sguard.complete()
 
     def batch(self, inputs: List[Any], config: Optional[Any] = None, **kwargs) -> List[Any]:
         """Batch invoke with per-item protection."""
