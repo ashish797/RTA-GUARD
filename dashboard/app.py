@@ -1637,6 +1637,120 @@ async def validate_plugin(data: dict, auth: bool = Depends(require_auth)):
         return {"valid": False, "issues": [str(e)]}
 
 
+# ─── Phase 10: Federation API ─────────────────────────────────────────
+
+_federation_server = None
+
+def get_federation_server():
+    global _federation_server
+    if _federation_server is None:
+        from discus.federation import AggregationServer, PrivacyMode
+        privacy_mode = os.getenv("FEDERATION_PRIVACY_MODE", "balanced")
+        _federation_server = AggregationServer(
+            node_id=os.getenv("FEDERATION_NODE_ID", "default"),
+            privacy_mode=PrivacyMode(privacy_mode),
+        )
+    return _federation_server
+
+
+@app.get("/api/federation/stats")
+async def federation_stats(auth: bool = Depends(require_auth)):
+    """Get federation statistics."""
+    fs = get_federation_server()
+    return fs.get_stats()
+
+
+@app.get("/api/federation/nodes")
+async def federation_nodes(auth: bool = Depends(require_auth)):
+    """List federation nodes."""
+    fs = get_federation_server()
+    return {"nodes": fs.list_nodes()}
+
+
+@app.post("/api/federation/nodes/register")
+async def federation_register_node(data: dict):
+    """Register a federation node."""
+    from discus.federation import FederationNode
+    fs = get_federation_server()
+    node = FederationNode(
+        node_id=data["node_id"],
+        url=data.get("url", ""),
+        privacy_mode=data.get("privacy_mode", "balanced"),
+    )
+    return fs.register_node(node)
+
+
+@app.post("/api/federation/nodes/heartbeat")
+async def federation_heartbeat(data: dict):
+    """Process node heartbeat."""
+    fs = get_federation_server()
+    return fs.heartbeat(data["node_id"])
+
+
+@app.post("/api/federation/fingerprints/submit")
+async def federation_submit_fingerprints(data: dict):
+    """Submit anonymized fingerprints."""
+    fs = get_federation_server()
+    return fs.submit_fingerprints(data["node_id"], data["fingerprints"])
+
+
+@app.post("/api/federation/aggregate")
+async def federation_aggregate(auth: bool = Depends(require_auth)):
+    """Run global aggregation."""
+    fs = get_federation_server()
+    result = fs.run_aggregation()
+    return result.to_dict()
+
+
+@app.post("/api/federation/threats/submit")
+async def federation_submit_threat(data: dict):
+    """Submit a threat signature."""
+    fs = get_federation_server()
+    return fs.submit_threat(data["node_id"], data["threat"])
+
+
+@app.get("/api/federation/threats")
+async def federation_get_threats(threat_type: str = "", min_confidence: float = 0.0, auth: bool = Depends(require_auth)):
+    """Get shared threat intelligence."""
+    fs = get_federation_server()
+    threats = fs.get_threat_intel(
+        threat_type=threat_type or None,
+        min_confidence=min_confidence,
+    )
+    return {"threats": threats, "total": len(threats)}
+
+
+@app.get("/api/federation/anomaly/{node_id}")
+async def federation_node_anomaly(node_id: str, auth: bool = Depends(require_auth)):
+    """Get anomaly assessment for a node."""
+    fs = get_federation_server()
+    return fs.get_node_anomaly(node_id)
+
+
+@app.get("/api/federation/baseline")
+async def federation_baseline(auth: bool = Depends(require_auth)):
+    """Get current global baseline."""
+    fs = get_federation_server()
+    result = fs.run_aggregation()
+    return {"baseline_vector": result.baseline_vector, "participant_count": result.participant_count}
+
+
+@app.get("/api/federation/privacy/{node_id}")
+async def federation_privacy_status(node_id: str, auth: bool = Depends(require_auth)):
+    """Get privacy budget status for a node."""
+    fs = get_federation_server()
+    budget = fs.privacy.budget
+    return {
+        "node_id": node_id,
+        "mode": fs.config.mode.value,
+        "epsilon": fs.config.epsilon,
+        "max_budget": fs.config.max_budget,
+        "budget_remaining": budget.remaining(node_id),
+        "budget_used": budget.used(node_id),
+        "queries": budget.query_count(node_id),
+    }
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket for real-time event streaming."""
