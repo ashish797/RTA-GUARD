@@ -6,6 +6,8 @@
 
 *Enforce cosmic order (Ṛta) on your AI agents — deterministic kill-switch, constitutional governance, real-time threat detection.*
 
+*Inspired by the **Rig Veda** (ऋग्वेद), the oldest of the four Vedas. Our 13 constitutional rules (R0–R13) are rooted in Vedic deities and principles of cosmic law.*
+
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.94+-orange.svg)](https://rust-lang.org)
 [![Python](https://img.shields.io/badge/Python-3.11+-green.svg)](https://python.org)
