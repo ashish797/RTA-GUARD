@@ -127,6 +127,26 @@ SENSITIVE_KEYWORDS = {
     "database_url": Severity.HIGH,
 }
 
+# --- Spelled-out digit detection (PII bypass prevention) ---
+DIGIT_WORDS = {
+    "zero", "one", "two", "three", "four", "five", "six", "seven",
+    "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen",
+    "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
+    "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty",
+    "ninety", "hundred", "thousand",
+}
+
+# Meta-signals indicating PII obfuscation intent
+OBFUSCATION_SIGNALS = [
+    r"format\s+(this|the|my|that)\s+(complete|full|number|digit|sequence|code)",
+    r"format\s+(this|the|it)\s+(for\s+me)?",
+    r"convert\s+(this|the|my|those)\s+(to|into)\s+(number|digit)",
+    r"write\s+(this|the|my)\s+(as|in)\s+(number|digit)",
+    r"copy[- ]?paste",
+    r"type\s+(this|it)\s+(out|for\s+me)",
+    r"can\s+you\s+(write|type|format|convert|give)\s+(me\s+)?(the\s+)?(number|digit|code)",
+]
+
 
 class RuleEngine:
     """Evaluates input text against security rules."""
@@ -213,6 +233,11 @@ class RuleEngine:
 
         # Layer 4: Sensitive keywords
         result = self._check_sensitive_keywords(normalized)
+        if result:
+            return result
+
+        # Layer 4b: Spelled-out digit obfuscation (PII bypass prevention)
+        result = self._check_digit_obfuscation(text)
         if result:
             return result
 
@@ -363,12 +388,13 @@ class RuleEngine:
         """Detect sensitive keywords like API keys, passwords."""
         text_lower = text.lower()
         found = []
+        severity_order = [Severity.LOW, Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL]
         highest_severity = Severity.LOW
 
         for keyword, severity in SENSITIVE_KEYWORDS.items():
             if keyword in text_lower:
                 found.append(keyword)
-                if severity.value > highest_severity.value:
+                if severity_order.index(severity) > severity_order.index(highest_severity):
                     highest_severity = severity
 
         if found:
@@ -378,6 +404,65 @@ class RuleEngine:
                 f"Sensitive keywords detected: {', '.join(found)}"
             )
         return None
+
+    def _check_digit_obfuscation(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
+        """
+        Detect PII obfuscation via spelled-out digits.
+
+        Catches attempts like: "My SSN is nine-two-zero, eight-one, five..."
+        by detecting clusters of digit-words combined with obfuscation meta-signals.
+
+        Two conditions must be met:
+        1. Text contains 3+ digit-words in close proximity (within 60 chars)
+        2. Text contains an obfuscation meta-signal (format, copy-paste, etc.)
+        """
+        text_lower = text.lower()
+
+        # Count digit-words and measure their proximity
+        words = text_lower.split()
+        digit_positions = []
+        for i, word in enumerate(words):
+            clean = word.strip(".,;:!?-")
+            if clean in DIGIT_WORDS:
+                digit_positions.append(i)
+
+        # Need at least 3 digit-words to be suspicious
+        if len(digit_positions) < 3:
+            return None
+
+        # Check if digit-words are clustered (within 8 word positions of each other)
+        clustered = False
+        for i in range(len(digit_positions) - 2):
+            if digit_positions[i + 2] - digit_positions[i] <= 8:
+                clustered = True
+                break
+
+        if not clustered:
+            return None
+
+        # Check for obfuscation meta-signals
+        has_signal = False
+        for pattern in OBFUSCATION_SIGNALS:
+            if re.search(pattern, text_lower):
+                has_signal = True
+                break
+
+        if not has_signal:
+            # Digit clusters without obfuscation signal are less suspicious
+            # (could be "one two three, let's go" — benign)
+            # But if 8+ digit-words clustered, it's very suspicious (likely PII)
+            if len(digit_positions) >= 8:
+                has_signal = True
+
+        if not has_signal:
+            return None
+
+        return (
+            ViolationType.PII_DETECTED,
+            Severity.HIGH,
+            f"PII obfuscation detected: {len(digit_positions)} spelled-out digits "
+            f"(potential PII bypass attempt)"
+        )
 
     def _check_blocked_keywords(self, text: str) -> Optional[tuple[ViolationType, Severity, str]]:
         """Check user-configured blocked keywords."""
@@ -435,9 +520,21 @@ class RuleEngine:
     # ================================================================
 
     # --- Destructive actions config (R10 — INDRA) ---
+    # Destructive keywords that are safe as standalone words (common English)
+    # These need context to be destructive — check with _CONTEXTUAL_PAIRS
+    AMBIGUOUS_DESTRUCTIVE = {"format", "purge", "erase", "remove"}
+
+    # Contextual pairs: (keyword, context_words) — only destructive when near these
+    CONTEXTUAL_DESTRUCTIVE = {
+        "format": {"disk", "drive", "c:", "d:", "hard", "ssd", "partition", "/dev/"},
+        "purge": {"database", "table", "records", "data", "logs"},
+        "erase": {"disk", "drive", "data", "storage", "memory"},
+        "remove": {"user", "account", "database", "table", "all"},
+    }
+
     DESTRUCTIVE_KEYWORDS = {
-        "delete", "remove", "drop", "destroy", "wipe", "format",
-        "kill_process", "shutdown", "truncate", "purge", "erase",
+        "delete", "drop", "destroy", "wipe",
+        "kill_process", "shutdown", "truncate",
         "annihilate", "obliterate", "terminate",
     }
 
@@ -513,8 +610,15 @@ class RuleEngine:
             if auth_kw in text_lower:
                 return None  # Authorized action, skip
 
-        # Check destructive keywords
+        # Check destructive keywords (unambiguous ones)
         found_keywords = [kw for kw in self.DESTRUCTIVE_KEYWORDS if kw in text_lower]
+
+        # Check contextual destructive keywords (only destructive with context)
+        for kw, context_words in self.CONTEXTUAL_DESTRUCTIVE.items():
+            if kw in text_lower:
+                # Only flag if a context word is also present
+                if any(ctx in text_lower for ctx in context_words):
+                    found_keywords.append(f"{kw}(contextual)")
 
         # Check destructive patterns
         found_patterns = []

@@ -34,6 +34,10 @@ try:
 except ImportError:
     _metrics_enabled = False
 
+# Placeholders — initialized properly later in the file
+webhook_manager = None
+sla_tracker = None
+
 # Initialize Brahmanda Map — Qdrant if QDRANT_URL set, else in-memory
 brahmanda_backend = os.getenv("BRAHMANDA_BACKEND", "auto")
 if brahmanda_backend == "qdrant" or (brahmanda_backend == "auto" and os.getenv("QDRANT_URL")):
@@ -60,6 +64,10 @@ try:
 except ImportError:
     verification_pipeline = None
     logger.info("VerificationPipeline not available, using simple verifier")
+
+# Data directory (must be defined before modules that reference it)
+data_dir = os.getenv("RTA_DATA_DIR", "data")
+os.makedirs(data_dir, exist_ok=True)
 
 # Initialize Rate Limiting (Phase 4.7)
 try:
@@ -179,7 +187,6 @@ auth = init_auth(auth_config)
 
 # Initialize Tenant Manager (Phase 4.1)
 from brahmanda.tenancy import TenantManager, get_tenant_manager, validate_tenant_id
-data_dir = os.getenv("RTA_DATA_DIR", "data")
 tenant_manager = get_tenant_manager(base_data_dir=data_dir)
 
 # Initialize RBAC Manager (Phase 4.2)
@@ -1048,7 +1055,6 @@ except ImportError:
     logger.warning("Webhook module not available")
 
 # Initialize WebhookManager
-webhook_manager = None
 if _webhooks_available:
     try:
         webhook_manager = get_webhook_manager(
@@ -1509,6 +1515,246 @@ async def prometheus_metrics():
 # Update drift/tamas gauges when those endpoints are queried
 _orig_drift_record = None
 _orig_tamas_eval = None
+
+
+# ─── Phase 9: Plugin Marketplace API ───────────────────────────────────
+
+# Initialize plugin manager (lazy)
+_plugin_manager = None
+
+def get_plugin_manager():
+    global _plugin_manager
+    if _plugin_manager is None:
+        from discus.plugins import PluginManager
+        _plugin_manager = PluginManager()
+        _plugin_manager.load_all()
+    return _plugin_manager
+
+
+@app.get("/api/plugins")
+async def list_plugins(category: str = "", auth: bool = Depends(require_auth)):
+    """List all installed plugins."""
+    pm = get_plugin_manager()
+    plugins = pm.list_plugins(category=category or None)
+    stats = pm.get_stats()
+    return {
+        "plugins": [p.to_dict() for p in plugins],
+        "total": len(plugins),
+        "stats": stats,
+    }
+
+
+@app.get("/api/plugins/{plugin_id}")
+async def get_plugin(plugin_id: str, auth: bool = Depends(require_auth)):
+    """Get plugin details."""
+    pm = get_plugin_manager()
+    plugin = pm.get_plugin(plugin_id)
+    if not plugin:
+        raise HTTPException(status_code=404, detail=f"Plugin not found: {plugin_id}")
+    return plugin.to_dict()
+
+
+@app.post("/api/plugins/install")
+async def install_plugin(data: dict, auth: bool = Depends(require_auth)):
+    """Install a plugin from a source directory."""
+    source = data.get("source_dir", "")
+    if not source:
+        raise HTTPException(status_code=400, detail="source_dir is required")
+    try:
+        pm = get_plugin_manager()
+        plugin = pm.install_plugin(source)
+        return {"status": "installed", "plugin": plugin.to_dict()}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/plugins/{plugin_id}")
+async def delete_plugin(plugin_id: str, auth: bool = Depends(require_auth)):
+    """Uninstall a plugin."""
+    pm = get_plugin_manager()
+    if pm.uninstall_plugin(plugin_id):
+        return {"status": "uninstalled", "plugin_id": plugin_id}
+    raise HTTPException(status_code=404, detail=f"Plugin not found: {plugin_id}")
+
+
+@app.post("/api/plugins/{plugin_id}/enable")
+async def enable_plugin(plugin_id: str, auth: bool = Depends(require_auth)):
+    """Enable a plugin."""
+    pm = get_plugin_manager()
+    if pm.enable_plugin(plugin_id):
+        return {"status": "enabled", "plugin_id": plugin_id}
+    raise HTTPException(status_code=404, detail=f"Plugin not found: {plugin_id}")
+
+
+@app.post("/api/plugins/{plugin_id}/disable")
+async def disable_plugin(plugin_id: str, auth: bool = Depends(require_auth)):
+    """Disable a plugin."""
+    pm = get_plugin_manager()
+    if pm.disable_plugin(plugin_id):
+        return {"status": "disabled", "plugin_id": plugin_id}
+    raise HTTPException(status_code=404, detail=f"Plugin not found: {plugin_id}")
+
+
+@app.post("/api/plugins/{plugin_id}/test")
+async def test_plugin(plugin_id: str, auth: bool = Depends(require_auth)):
+    """Run tests for a plugin."""
+    pm = get_plugin_manager()
+    result = pm.test_plugin(plugin_id)
+    return result
+
+
+@app.get("/api/plugins/runs/recent")
+async def plugin_runs(plugin_id: str = "", limit: int = 50, auth: bool = Depends(require_auth)):
+    """Get recent plugin runs."""
+    from discus.plugins import PluginRegistry
+    registry = PluginRegistry()
+    runs = registry.get_runs(plugin_id=plugin_id or None, limit=limit)
+    return {"runs": runs, "total": len(runs)}
+
+
+@app.get("/api/plugins/stats/summary")
+async def plugin_stats(auth: bool = Depends(require_auth)):
+    """Get plugin statistics."""
+    pm = get_plugin_manager()
+    return pm.get_stats()
+
+
+@app.post("/api/plugins/validate")
+async def validate_plugin(data: dict, auth: bool = Depends(require_auth)):
+    """Validate a plugin directory without installing."""
+    source = data.get("source_dir", "")
+    if not source:
+        raise HTTPException(status_code=400, detail="source_dir is required")
+    try:
+        from pathlib import Path
+        from discus.plugins import PluginManifest, PluginSandbox
+        manifest = PluginManifest.from_yaml(Path(source) / "plugin.yaml")
+        sandbox = PluginSandbox()
+        entry = Path(source) / manifest.entry_point
+        if entry.exists():
+            issues = sandbox.validate_ast(entry.read_text(), str(entry))
+            return {
+                "valid": len(issues) == 0,
+                "manifest": manifest.to_dict(),
+                "issues": issues,
+            }
+        return {"valid": False, "manifest": manifest.to_dict(), "issues": [f"Entry point not found: {manifest.entry_point}"]}
+    except Exception as e:
+        return {"valid": False, "issues": [str(e)]}
+
+
+# ─── Phase 10: Federation API ─────────────────────────────────────────
+
+_federation_server = None
+
+def get_federation_server():
+    global _federation_server
+    if _federation_server is None:
+        from discus.federation import AggregationServer, PrivacyMode
+        privacy_mode = os.getenv("FEDERATION_PRIVACY_MODE", "balanced")
+        _federation_server = AggregationServer(
+            node_id=os.getenv("FEDERATION_NODE_ID", "default"),
+            privacy_mode=PrivacyMode(privacy_mode),
+        )
+    return _federation_server
+
+
+@app.get("/api/federation/stats")
+async def federation_stats(auth: bool = Depends(require_auth)):
+    """Get federation statistics."""
+    fs = get_federation_server()
+    return fs.get_stats()
+
+
+@app.get("/api/federation/nodes")
+async def federation_nodes(auth: bool = Depends(require_auth)):
+    """List federation nodes."""
+    fs = get_federation_server()
+    return {"nodes": fs.list_nodes()}
+
+
+@app.post("/api/federation/nodes/register")
+async def federation_register_node(data: dict):
+    """Register a federation node."""
+    from discus.federation import FederationNode
+    fs = get_federation_server()
+    node = FederationNode(
+        node_id=data["node_id"],
+        url=data.get("url", ""),
+        privacy_mode=data.get("privacy_mode", "balanced"),
+    )
+    return fs.register_node(node)
+
+
+@app.post("/api/federation/nodes/heartbeat")
+async def federation_heartbeat(data: dict):
+    """Process node heartbeat."""
+    fs = get_federation_server()
+    return fs.heartbeat(data["node_id"])
+
+
+@app.post("/api/federation/fingerprints/submit")
+async def federation_submit_fingerprints(data: dict):
+    """Submit anonymized fingerprints."""
+    fs = get_federation_server()
+    return fs.submit_fingerprints(data["node_id"], data["fingerprints"])
+
+
+@app.post("/api/federation/aggregate")
+async def federation_aggregate(auth: bool = Depends(require_auth)):
+    """Run global aggregation."""
+    fs = get_federation_server()
+    result = fs.run_aggregation()
+    return result.to_dict()
+
+
+@app.post("/api/federation/threats/submit")
+async def federation_submit_threat(data: dict):
+    """Submit a threat signature."""
+    fs = get_federation_server()
+    return fs.submit_threat(data["node_id"], data["threat"])
+
+
+@app.get("/api/federation/threats")
+async def federation_get_threats(threat_type: str = "", min_confidence: float = 0.0, auth: bool = Depends(require_auth)):
+    """Get shared threat intelligence."""
+    fs = get_federation_server()
+    threats = fs.get_threat_intel(
+        threat_type=threat_type or None,
+        min_confidence=min_confidence,
+    )
+    return {"threats": threats, "total": len(threats)}
+
+
+@app.get("/api/federation/anomaly/{node_id}")
+async def federation_node_anomaly(node_id: str, auth: bool = Depends(require_auth)):
+    """Get anomaly assessment for a node."""
+    fs = get_federation_server()
+    return fs.get_node_anomaly(node_id)
+
+
+@app.get("/api/federation/baseline")
+async def federation_baseline(auth: bool = Depends(require_auth)):
+    """Get current global baseline."""
+    fs = get_federation_server()
+    result = fs.run_aggregation()
+    return {"baseline_vector": result.baseline_vector, "participant_count": result.participant_count}
+
+
+@app.get("/api/federation/privacy/{node_id}")
+async def federation_privacy_status(node_id: str, auth: bool = Depends(require_auth)):
+    """Get privacy budget status for a node."""
+    fs = get_federation_server()
+    budget = fs.privacy.budget
+    return {
+        "node_id": node_id,
+        "mode": fs.config.mode.value,
+        "epsilon": fs.config.epsilon,
+        "max_budget": fs.config.max_budget,
+        "budget_remaining": budget.remaining(node_id),
+        "budget_used": budget.used(node_id),
+        "queries": budget.query_count(node_id),
+    }
 
 
 @app.websocket("/ws")

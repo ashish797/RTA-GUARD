@@ -62,7 +62,8 @@ class DiscusGuard:
 
     def __init__(self, config: Optional[GuardConfig] = None, rta_engine: Optional[RtaEngine] = None,
                  user_tracker: Optional[Any] = None, escalation_chain: Optional[Any] = None,
-                 webhook_manager: Optional[Any] = None, sla_tracker: Optional[Any] = None):
+                 webhook_manager: Optional[Any] = None, sla_tracker: Optional[Any] = None,
+                 plugin_manager: Optional[Any] = None):
         self.config = config or GuardConfig()
         self.rule_engine = RuleEngine(self.config, self.config.pii_patterns_yaml)
         self.rta_engine = rta_engine  # RTA constitutional engine (optional)
@@ -70,6 +71,7 @@ class DiscusGuard:
         self.escalation_chain = escalation_chain  # EscalationChain (optional, Phase 3.6)
         self.webhook_manager = webhook_manager  # WebhookManager (optional, Phase 4.4)
         self.sla_tracker = sla_tracker  # SLATracker (optional, Phase 4.8)
+        self.plugin_manager = plugin_manager  # PluginManager (optional, Phase 9)
         self._event_log: list[SessionEvent] = []
         self._on_kill_callbacks: list[Callable] = []
         self._killed_sessions: set[str] = set()
@@ -77,7 +79,8 @@ class DiscusGuard:
                      + (" with user tracking" if user_tracker else "")
                      + (" with escalation" if escalation_chain else "")
                      + (" with webhooks" if webhook_manager else "")
-                     + (" with SLA monitoring" if sla_tracker else ""))
+                     + (" with SLA monitoring" if sla_tracker else "")
+                     + (" with plugins" if plugin_manager else ""))
 
     def on_kill(self, callback: Callable[[SessionEvent], None]):
         """Register a callback for when a session is killed."""
@@ -99,6 +102,35 @@ class DiscusGuard:
             Raises SessionKilledError if kill threshold is met.
         """
         _check_start = time.monotonic() if _metrics_enabled else None
+
+        # Phase 9: Plugin hooks — ON_INPUT
+        plugin_results = []
+        if self.plugin_manager:
+            try:
+                from discus.plugins import PluginHook, PluginContext
+                pctx = PluginContext(session_id=session_id, input_text=text)
+                plugin_results = self.plugin_manager.run_hooks(PluginHook.ON_INPUT, pctx)
+                for pr in plugin_results:
+                    if pr.should_kill:
+                        event = SessionEvent(
+                            session_id=session_id,
+                            input_text=text[:200],
+                            violation_type=f"plugin:{pr.plugin_id}",
+                            severity=Severity.HIGH,
+                            decision=KillDecision.KILL,
+                            details=pr.message
+                        )
+                        self._log_event(event)
+                        self._killed_sessions.add(session_id)
+                        self._fire_on_kill(event)
+                        logger.warning(f"🛑 SESSION KILLED by plugin [{session_id}]: {pr.message}")
+                        raise SessionKilledError(event)
+                    elif pr.should_warn:
+                        logger.info(f"⚠️ Plugin warning [{session_id}]: {pr.message}")
+            except SessionKilledError:
+                raise
+            except Exception as e:
+                logger.debug(f"Plugin hook error (on_input): {e}")
 
         # Phase 3.5: User behavior tracking — record before processing
         user_signals = []
@@ -445,8 +477,12 @@ class DiscusGuard:
         return self.rule_engine.list_patterns()
 
     def _log_event(self, event: SessionEvent):
-        """Log an event internally."""
+        """Log an event internally with retention limit."""
         self._event_log.append(event)
+        # Enforce max events retention (drop oldest)
+        if self.config.max_events > 0 and len(self._event_log) > self.config.max_events:
+            # Keep events for killed sessions + recent events
+            self._event_log = self._event_log[-self.config.max_events:]
         # Notify dashboard via websocket if configured
         if self.config.dashboard_ws_url:
             asyncio.create_task(self._notify_dashboard(event))

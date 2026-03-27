@@ -1,0 +1,15 @@
+plugin_id: legal-disclaimer-checker
+name: "Legal Disclaimer Checker"
+version: "1.0.0"
+description: "Ensures AI outputs include required disclaimers when giving legal, medical, or financial advice."
+author: "RTA-GUARD Community"
+category: legal
+tags: [legal, disclaimer, compliance, advice]
+hooks: [on_output]
+entry_point: plugin.py
+class_name: Plugin
+config:
+  severity: warn
+rta_guard_version: ">=2.0.0"
+python_version: ">=3.11"
+dependencies: []

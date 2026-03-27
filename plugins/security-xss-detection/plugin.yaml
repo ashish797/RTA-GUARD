@@ -1,0 +1,15 @@
+plugin_id: security-xss-detection
+name: "XSS Detection Plugin"
+version: "1.0.0"
+description: "Detects cross-site scripting (XSS) attempts in input and output."
+author: "RTA-GUARD Community"
+category: security
+tags: [xss, security, web, injection]
+hooks: [on_input, on_output]
+entry_point: plugin.py
+class_name: Plugin
+config:
+  severity: kill
+rta_guard_version: ">=2.0.0"
+python_version: ">=3.11"
+dependencies: []
