@@ -63,7 +63,7 @@ class DiscusGuard:
     def __init__(self, config: Optional[GuardConfig] = None, rta_engine: Optional[RtaEngine] = None,
                  user_tracker: Optional[Any] = None, escalation_chain: Optional[Any] = None,
                  webhook_manager: Optional[Any] = None, sla_tracker: Optional[Any] = None,
-                 plugin_manager: Optional[Any] = None):
+                 plugin_manager: Optional[Any] = None, memory_manager: Optional[Any] = None):
         self.config = config or GuardConfig()
         self.rule_engine = RuleEngine(self.config, self.config.pii_patterns_yaml)
         self.rta_engine = rta_engine  # RTA constitutional engine (optional)
@@ -72,6 +72,7 @@ class DiscusGuard:
         self.webhook_manager = webhook_manager  # WebhookManager (optional, Phase 4.4)
         self.sla_tracker = sla_tracker  # SLATracker (optional, Phase 4.8)
         self.plugin_manager = plugin_manager  # PluginManager (optional, Phase 9)
+        self.memory_manager = memory_manager  # MemoryManager (optional, Phase 13)
         self._event_log: list[SessionEvent] = []
         self._on_kill_callbacks: list[Callable] = []
         self._killed_sessions: set[str] = set()
@@ -80,7 +81,8 @@ class DiscusGuard:
                      + (" with escalation" if escalation_chain else "")
                      + (" with webhooks" if webhook_manager else "")
                      + (" with SLA monitoring" if sla_tracker else "")
-                     + (" with plugins" if plugin_manager else ""))
+                     + (" with plugins" if plugin_manager else "")
+                     + (" with memory" if memory_manager else ""))
 
     def on_kill(self, callback: Callable[[SessionEvent], None]):
         """Register a callback for when a session is killed."""
@@ -145,6 +147,31 @@ class DiscusGuard:
                                    f"(risk={self.user_tracker.get_user_risk_score(user_id):.2f})")
             except Exception as e:
                 logger.debug(f"User tracker error: {e}")
+
+        # Phase 13: Conversation memory — add message and run multi-turn analysis
+        if self.memory_manager and text:
+            try:
+                self.memory_manager.add_user_message(session_id, text)
+                mt_result = self.memory_manager.analyze(session_id)
+                if mt_result.should_kill:
+                    event = SessionEvent(
+                        session_id=session_id,
+                        input_text=text[:200],
+                        decision=KillDecision.KILL,
+                        violation_type="multi_turn_attack",
+                        details=f"Multi-turn analysis: {mt_result.violations}",
+                    )
+                    self._log_event(event)
+                    self._killed_sessions.add(session_id)
+                    self._fire_on_kill(event)
+                    logger.warning(f"🛑 SESSION KILLED by multi-turn analysis [{session_id}]: {mt_result.violations}")
+                    raise SessionKilledError(event)
+                elif mt_result.should_warn:
+                    logger.info(f"⚠️ Multi-turn warning [{session_id}]: score={mt_result.risk_score:.2f}")
+            except SessionKilledError:
+                raise
+            except Exception as e:
+                logger.debug(f"Memory manager error: {e}")
 
         # Check if session is already killed
         if session_id in self._killed_sessions:

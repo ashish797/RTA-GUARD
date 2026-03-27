@@ -1,0 +1,28 @@
+# RAG Strict — Maximum grounding enforcement
+name: rag-strict
+description: "Strict RAG protection — kill on hallucination"
+
+rules:
+  grounding:
+    enabled: true
+    action: kill
+    threshold: 0.5
+    message: "Response not grounded in provided documents"
+    
+  hallucination:
+    enabled: true
+    action: kill
+    threshold: 0.3
+    message: "Hallucination detected in RAG response"
+    
+  citations:
+    enabled: true
+    action: kill
+    required: true
+    message: "Claims must cite source documents"
+    
+  relevance:
+    enabled: true
+    action: warn
+    threshold: 0.3
+    message: "Retrieved documents may not be relevant"

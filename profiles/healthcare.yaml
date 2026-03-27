@@ -1,0 +1,26 @@
+# Healthcare profile — HIPAA-compliant
+name: healthcare
+description: "HIPAA-compliant healthcare chatbot"
+
+include: strict.yaml
+
+rules:
+  medical_records:
+    enabled: true
+    action: kill
+    patterns:
+      - "MRN[:\\s]*\\d{6,10}"
+      - "ICD[-\\s]*(?:10)?[:\\s]*[A-Z]\\d{2}\\.?\\d{0,4}"
+    message: "Medical record number or ICD code detected"
+    
+  patient_identifiers:
+    enabled: true
+    action: kill
+    patterns:
+      - "NPI[:\\s]*\\d{10}"
+      - "DEA[:\\s]*[A-Z]{2}\\d{7}"
+      - "\\b[A-Z]{3}\\d{9}\\b"
+    message: "Patient identifier detected (NPI/DEA/Insurance ID)"
+
+plugins:
+  - healthcare-pii-hipaa

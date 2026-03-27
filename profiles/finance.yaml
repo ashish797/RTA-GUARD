@@ -1,0 +1,34 @@
+# Finance profile — fraud and financial data protection
+name: finance
+description: "Financial services chatbot with fraud detection"
+
+include: strict.yaml
+
+rules:
+  financial_data:
+    enabled: true
+    action: kill
+    patterns:
+      - "\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b"
+      - "\\brouting\\s*(?:number)?[:\\s]*\\d{9}\\b"
+      - "\\baccount\\s*(?:number)?[:\\s]*\\d{8,12}\\b"
+    message: "Financial data detected (card/account/routing number)"
+    
+  fraud_indicators:
+    enabled: true
+    action: warn
+    patterns:
+      - "\\bwire\\s+transfer\\s+to\\s+(?:offshore|overseas)"
+      - "\\b(?:bypass|skip)\\s+(?:verification|authentication)"
+      - "\\blaunder(?:ing)?\\b"
+    message: "Potential fraud indicator detected"
+
+  large_amounts:
+    enabled: true
+    action: warn
+    patterns:
+      - "\\$\\s*[\\d,]{6,}"
+    message: "Large transaction amount referenced"
+
+plugins:
+  - finance-fraud-detection
