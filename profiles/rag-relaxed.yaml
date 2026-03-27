@@ -1,0 +1,25 @@
+# RAG Relaxed — Warn on issues, don't kill
+name: rag-relaxed
+description: "Relaxed RAG protection — warn on hallucination"
+
+rules:
+  grounding:
+    enabled: true
+    action: warn
+    threshold: 0.2
+    message: "Some claims may not be grounded"
+    
+  hallucination:
+    enabled: true
+    action: warn
+    threshold: 0.6
+    message: "Possible hallucination detected"
+    
+  citations:
+    enabled: false
+    
+  relevance:
+    enabled: true
+    action: warn
+    threshold: 0.1
+    message: "Document relevance is low"
