@@ -1,0 +1,15 @@
+plugin_id: security-prompt-leakage
+name: "System Prompt Leakage Prevention"
+version: "1.0.0"
+description: "Detects when the AI might be leaking its system prompt or internal instructions."
+author: "RTA-GUARD Community"
+category: security
+tags: [prompt, leakage, security, system]
+hooks: [on_output]
+entry_point: plugin.py
+class_name: Plugin
+config:
+  severity: kill
+rta_guard_version: ">=2.0.0"
+python_version: ">=3.11"
+dependencies: []

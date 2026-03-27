@@ -1,0 +1,21 @@
+plugin_id: healthcare-pii-hipaa
+name: "Healthcare PII & HIPAA Protection"
+version: "1.0.0"
+description: "Detects PHI/PII specific to healthcare: medical record numbers, ICD codes, patient names in clinical context, insurance IDs."
+author: "RTA-GUARD Community"
+category: healthcare
+tags: [pii, hipaa, phi, healthcare]
+hooks: [on_input, on_output]
+entry_point: plugin.py
+class_name: Plugin
+config:
+  severity: kill
+  patterns:
+    - mrn: "MRN[:\\s]*\\d{6,10}"
+    - icd10: "[A-TV-Z]\\d{2}\\.?\\d{0,4}"
+    - npi: "\\bNPI[:\\s]*\\d{10}\\b"
+    - insurance_id: "\\b[A-Z]{3}\\d{9}\\b"
+    - dea_number: "\\b[A-Z]{2}\\d{7}\\b"
+rta_guard_version: ">=2.0.0"
+python_version: ">=3.11"
+dependencies: []

@@ -1,0 +1,16 @@
+plugin_id: finance-fraud-detection
+name: "Financial Fraud Detection"
+version: "1.0.0"
+description: "Detects financial fraud patterns: suspicious transaction amounts, known fraud phrases, account enumeration attempts."
+author: "RTA-GUARD Community"
+category: finance
+tags: [fraud, finance, banking, transactions]
+hooks: [on_input, on_output]
+entry_point: plugin.py
+class_name: Plugin
+config:
+  severity: warn
+  max_transaction_threshold: 100000
+rta_guard_version: ">=2.0.0"
+python_version: ">=3.11"
+dependencies: []
