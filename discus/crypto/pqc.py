@@ -148,8 +148,15 @@ class OQSMLKEM:
     """ML-KEM via liboqs."""
 
     def __init__(self, level: int = 768):
-        name_map = {512: "Kyber512", 768: "Kyber768", 1024: "Kyber1024"}
-        self.alg_name = name_map.get(level, "Kyber768")
+        # Try new NIST names first, fall back to legacy Kyber names
+        name_map_new = {512: "ML-KEM-512", 768: "ML-KEM-768", 1024: "ML-KEM-1024"}
+        name_map_old = {512: "Kyber512", 768: "Kyber768", 1024: "Kyber1024"}
+        self.alg_name = name_map_new.get(level, "ML-KEM-768")
+        try:
+            with oqs.KeyEncapsulation(self.alg_name):
+                pass
+        except (oqs.MechanismNotSupportedError, oqs.MechanismNotFoundError):
+            self.alg_name = name_map_old.get(level, "Kyber768")
 
     def keypair(self) -> Tuple[bytes, bytes]:
         with oqs.KeyEncapsulation(self.alg_name) as kem:
@@ -172,8 +179,15 @@ class OQSMLDSA:
     """ML-DSA via liboqs."""
 
     def __init__(self, level: int = 65):
-        name_map = {44: "Dilithium2", 65: "Dilithium3", 87: "Dilithium5"}
-        self.alg_name = name_map.get(level, "Dilithium3")
+        # Try new NIST names first, fall back to legacy Dilithium names
+        name_map_new = {44: "ML-DSA-44", 65: "ML-DSA-65", 87: "ML-DSA-87"}
+        name_map_old = {44: "Dilithium2", 65: "Dilithium3", 87: "Dilithium5"}
+        self.alg_name = name_map_new.get(level, "ML-DSA-65")
+        try:
+            with oqs.Signature(self.alg_name):
+                pass
+        except (oqs.MechanismNotSupportedError, oqs.MechanismNotFoundError):
+            self.alg_name = name_map_old.get(level, "Dilithium3")
 
     def keypair(self) -> Tuple[bytes, bytes]:
         with oqs.Signature(self.alg_name) as sig:
