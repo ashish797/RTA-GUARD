@@ -12,7 +12,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.94+-orange.svg)](https://rust-lang.org)
 [![Python](https://img.shields.io/badge/Python-3.11+-green.svg)](https://python.org)
 [![WASM](https://img.shields.io/badge/WASM-ready-blueviolet.svg)](https://webassembly.org)
-[![Tests](https://img.shields.io/badge/tests-1000%2B-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-2000%2B-brightgreen.svg)](#testing)
 
 [Quick Start](#quick-start) •
 [Architecture](#architecture) •
@@ -40,6 +40,11 @@ Named after the Vedic concept of **Ṛta** (cosmic order), RTA-GUARD enforces st
 | Enterprise compliance requirements | **SOC2, HIPAA, EU AI Act** templates with deterministic audit trails |
 | Deploying AI agents at scale | **Docker, Kubernetes, Helm** with HA, multi-region, auto-scaling out of the box |
 | Cost spiraling from unchecked AI usage | **Micro-cent cost tracking**, quotas, and optimization recommendations |
+| No human-readable rule authoring | **Rule DSL** — write rules in plain English, hot-reload from file |
+| Untested security posture | **Red Team Mode** — 105 built-in attack patterns, CI pipeline, variant fuzzing |
+| Static thresholds cause false positives | **Adaptive Thresholds** — learns per-deployment, auto-tunes to P95 baseline |
+| Can't prove ROI to stakeholders | **A/B Testing & Analytics** — shadow guard, ROI reporting, experiment runner |
+| Framework lock-in | **6 Framework Integrations** — LangChain, LlamaIndex, Haystack, SK, CrewAI, AutoGen |
 
 ---
 
@@ -309,27 +314,26 @@ cd discus-rs && cargo test
 
 ## 🗺️ Roadmap
 
-### ✅ Completed (Phases 0–6)
-- [x] Kill-Switch MVP
-- [x] RTA Rules Engine (13 rules)
-- [x] Brahmanda Map (vector + SQLite)
-- [x] Conscience Monitor (drift detection)
-- [x] Enterprise (RBAC, SSO, compliance, webhooks)
-- [x] Rust WASM Core (browser + WASI)
-- [x] Multi-Language Bindings (Python, JS, Go, C, Rust)
-- [x] Production Deployment (Docker/Helm/K8s)
-- [x] Observability (Prometheus + ELK)
-- [x] CI/CD Pipelines
-- [x] Multi-Region HA
-- [x] Cost Optimization
-- [x] Backup & Disaster Recovery
-- [x] Documentation & Training
-
-### 🔜 Upcoming
-- [ ] Phase 7 — UI Redesign (React dashboard, real-time console)
-- [ ] Phase 8 — Agent Marketplace (plugin ecosystem)
-- [ ] Phase 9 — Federated Learning (privacy-preserving drift detection)
-- [ ] Phase 10 — Quantum-Resistant Cryptography (future-proof)
+### ✅ Completed (Phases 0–18)
+- [x] **Phase 0** — Kill-Switch MVP (DiscusGuard, pattern-based detection)
+- [x] **Phase 1** — RTA Rules Engine (13 Vedic rules, priority matrix, chaos scoring)
+- [x] **Phase 2** — Brahmanda Map (Qdrant vector DB, truth verification, source attribution, mutation tracking)
+- [x] **Phase 3** — Conscience Monitor (behavioral profiling, drift scoring, Tamas detection, escalation)
+- [x] **Phase 4** — Enterprise Features (RBAC, SSO, compliance, webhooks, rate limiting, SLA)
+- [x] **Phase 5** — Sudarshan WASM (Rust→WASM, browser injection, WASI, multi-language bindings)
+- [x] **Phase 6** — Ecosystem & Scale (Docker, K8s, Helm, Prometheus, ELK, CI/CD, HA, DR)
+- [x] **Phase 7** — React Dashboard (15 pages, WebSocket live events, dark theme)
+- [x] **Phase 8** — Agent Marketplace (plugin system, sandbox, registry, 8 seed plugins)
+- [x] **Phase 9** — Federated Learning (behavioral fingerprinting, differential privacy, threat intel)
+- [x] **Phase 10** — Quantum-Resistant Crypto (ML-KEM-768, ML-DSA-65, SLH-DSA, hybrid mode)
+- [x] **Phase 11** — LangChain + LlamaIndex Integration (drop-in wrappers, streaming support)
+- [x] **Phase 12** — Streaming & Real-Time Protection (per-chunk checking, early termination)
+- [x] **Phase 13** — Conversation Memory & Multi-Turn Defense (temporal consistency, drift tracking)
+- [x] **Phase 14** — Custom Rules & Multi-Tenant (YAML profiles, rule inheritance)
+- [x] **Phase 15** — RAG Intelligence (grounding checker, hallucination detector, citation enforcer)
+- [x] **Phase 16** — Observability & Tracing (SQLite traces, violation analytics, cost tracking, OTel)
+- [x] **Phase 17** — Framework Ecosystem (Haystack, Semantic Kernel, CrewAI, AutoGen + unified interface)
+- [x] **Phase 18** — Advanced Features (adaptive thresholds, rule DSL, red team mode, A/B testing)
 
 ---
 
@@ -337,10 +341,15 @@ cd discus-rs && cargo test
 
 | Metric | Value |
 |--------|-------|
-| Phases Completed | 7 (of 10 planned) |
-| Subphases | 29 |
-| Test Count | 1,000+ |
+| Phases Completed | **18** (all) |
+| Subphases | **57** |
+| Python Files | **175** |
+| Code Lines | **~70,000** |
+| Test Lines | **~10,400** |
+| Test Count | **2,000+** |
 | Languages | 6 (Rust, Python, JS, Go, C, TypeScript) |
+| Framework Integrations | 6 (LangChain, LlamaIndex, Haystack, Semantic Kernel, CrewAI, AutoGen) |
+| Attack Patterns | 105 (8 categories) |
 | WASM Binary | <1MB (browser), <800KB (WASI) |
 | Check Latency | <1ms (1KB input) |
 | PII Detection | <100μs |
