@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="logo.svg" alt="RTA-GUARD Logo" width="300">
+
 # 🛡️ RTA-GUARD
 
 **The Last Line of Defense for AI Agents**
