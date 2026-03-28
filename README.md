@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="logo.svg" alt="RTA-GUARD Logo" width="300">
+<img src="https://raw.githubusercontent.com/ashish797/RTA-GUARD/main/logo.svg" alt="RTA-GUARD Logo" width="300">
 
 # 🛡️ RTA-GUARD
 
