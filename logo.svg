@@ -1,74 +1,61 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 560" width="512" height="560">
   <defs>
-    <!-- Gradients -->
     <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#1B2A4A"/>
-      <stop offset="50%" style="stop-color:#0F1B33"/>
-      <stop offset="100%" style="stop-color:#0A1628"/>
+      <stop offset="0%" style="stop-color:#FAFBFC"/>
+      <stop offset="100%" style="stop-color:#F0F2F5"/>
     </linearGradient>
     <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#F5C542"/>
-      <stop offset="30%" style="stop-color:#E8A817"/>
-      <stop offset="70%" style="stop-color:#D4940F"/>
-      <stop offset="100%" style="stop-color:#F5C542"/>
+      <stop offset="0%" style="stop-color:#D4A017"/>
+      <stop offset="30%" style="stop-color:#C4900A"/>
+      <stop offset="70%" style="stop-color:#B8860B"/>
+      <stop offset="100%" style="stop-color:#D4A017"/>
+    </linearGradient>
+    <linearGradient id="goldGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8B820"/>
+      <stop offset="50%" style="stop-color:#D4A017"/>
+      <stop offset="100%" style="stop-color:#C4900A"/>
     </linearGradient>
     <linearGradient id="bladeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#E8A817;stop-opacity:0.7"/>
-      <stop offset="50%" style="stop-color:#F5C542;stop-opacity:1"/>
-      <stop offset="100%" style="stop-color:#E8A817;stop-opacity:0.7"/>
+      <stop offset="0%" style="stop-color:#D4A017;stop-opacity:0.6"/>
+      <stop offset="50%" style="stop-color:#E8B820;stop-opacity:0.95"/>
+      <stop offset="100%" style="stop-color:#D4A017;stop-opacity:0.6"/>
     </linearGradient>
     <linearGradient id="bladeGrad2" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#C47F17;stop-opacity:0.6"/>
-      <stop offset="50%" style="stop-color:#E8A817;stop-opacity:0.9"/>
-      <stop offset="100%" style="stop-color:#C47F17;stop-opacity:0.6"/>
+      <stop offset="0%" style="stop-color:#C4900A;stop-opacity:0.4"/>
+      <stop offset="50%" style="stop-color:#D4A017;stop-opacity:0.7"/>
+      <stop offset="100%" style="stop-color:#C4900A;stop-opacity:0.4"/>
     </linearGradient>
-    <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" style="stop-color:#FFF8DC"/>
-      <stop offset="40%" style="stop-color:#F5C542"/>
-      <stop offset="100%" style="stop-color:#D4940F"/>
+    <radialGradient id="coreGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FFFAED"/>
+      <stop offset="50%" style="stop-color:#F5E6B8"/>
+      <stop offset="100%" style="stop-color:#E8D5A0"/>
     </radialGradient>
-    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#E8A817"/>
-      <stop offset="50%" style="stop-color:#F5C542"/>
-      <stop offset="100%" style="stop-color:#E8A817"/>
-    </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="2" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <filter id="softGlow">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
     <filter id="shadow">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.3"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#8B7355" flood-opacity="0.15"/>
+    </filter>
+    <filter id="softShadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#8B7355" flood-opacity="0.12"/>
     </filter>
     <clipPath id="shieldClip">
       <path d="M256 28 L448 120 L448 280 Q448 400 256 468 Q64 400 64 280 L64 120 Z"/>
     </clipPath>
   </defs>
 
-  <!-- ========== SHIELD BODY ========== -->
-  <!-- Outer shield -->
+  <!-- ========== SHIELD BODY (LIGHT) ========== -->
   <path d="M256 28 L448 120 L448 280 Q448 400 256 468 Q64 400 64 280 L64 120 Z"
-        fill="url(#shieldGrad)" filter="url(#shadow)"/>
-  <!-- Shield border -->
+        fill="url(#shieldGrad)" filter="url(#softShadow)"/>
   <path d="M256 28 L448 120 L448 280 Q448 400 256 468 Q64 400 64 280 L64 120 Z"
-        fill="none" stroke="url(#goldGrad)" stroke-width="3"/>
-  <!-- Inner shield border -->
+        fill="none" stroke="url(#goldGrad)" stroke-width="2.5"/>
   <path d="M256 42 L436 128 L436 276 Q436 390 256 454 Q76 390 76 276 L76 128 Z"
-        fill="none" stroke="url(#goldGrad)" stroke-width="1" opacity="0.4"/>
+        fill="none" stroke="url(#goldGrad)" stroke-width="0.8" opacity="0.35"/>
 
-  <!-- ========== MANDALA OUTER RING ========== -->
+  <!-- ========== MANDALA PETALS ========== -->
   <g clip-path="url(#shieldClip)">
     <g transform="translate(256,252)">
-      <!-- Outer decorative ring -->
-      <circle cx="0" cy="0" r="185" fill="none" stroke="#E8A817" stroke-width="1.5" opacity="0.3"/>
-      <circle cx="0" cy="0" r="175" fill="none" stroke="#F5C542" stroke-width="1" opacity="0.2"/>
-
-      <!-- 16 lotus petals -->
+      <circle cx="0" cy="0" r="185" fill="none" stroke="#D4A017" stroke-width="1" opacity="0.2"/>
+      <circle cx="0" cy="0" r="175" fill="none" stroke="#C4900A" stroke-width="0.8" opacity="0.15"/>
       <g id="petal">
-        <path d="M0,-170 Q12,-145 0,-125 Q-12,-145 0,-170" fill="#F5C542" opacity="0.12" stroke="#F5C542" stroke-width="0.8" stroke-opacity="0.4"/>
+        <path d="M0,-170 Q12,-145 0,-125 Q-12,-145 0,-170" fill="#D4A017" opacity="0.08" stroke="#D4A017" stroke-width="0.7" stroke-opacity="0.25"/>
       </g>
       <use href="#petal" transform="rotate(22.5)"/>
       <use href="#petal" transform="rotate(45)"/>
@@ -89,16 +76,15 @@
   </g>
 
   <!-- ========== SUDARSHAN CHAKRA ========== -->
-  <g transform="translate(256,252)" filter="url(#glow)">
-    <!-- Outer ring -->
-    <circle cx="0" cy="0" r="120" fill="none" stroke="url(#goldGrad)" stroke-width="5"/>
-    <circle cx="0" cy="0" r="128" fill="none" stroke="#E8A817" stroke-width="1" opacity="0.3"/>
-    <circle cx="0" cy="0" r="112" fill="none" stroke="#E8A817" stroke-width="1" opacity="0.3"/>
+  <g transform="translate(256,252)" filter="url(#shadow)">
+    <circle cx="0" cy="0" r="120" fill="none" stroke="url(#goldGrad2)" stroke-width="4"/>
+    <circle cx="0" cy="0" r="128" fill="none" stroke="#D4A017" stroke-width="0.8" opacity="0.2"/>
+    <circle cx="0" cy="0" r="112" fill="none" stroke="#D4A017" stroke-width="0.8" opacity="0.2"/>
 
     <!-- 8 main blades -->
     <g id="blade">
-      <path d="M0,-118 C6,-95 7,-60 0,-30 C-7,-60 -6,-95 0,-118" fill="url(#bladeGrad)" opacity="0.85"/>
-      <line x1="0" y1="-118" x2="0" y2="-30" stroke="#FFF8DC" stroke-width="0.5" opacity="0.4"/>
+      <path d="M0,-118 C6,-95 7,-60 0,-30 C-7,-60 -6,-95 0,-118" fill="url(#bladeGrad)"/>
+      <line x1="0" y1="-115" x2="0" y2="-35" stroke="#E8B820" stroke-width="0.4" opacity="0.5"/>
     </g>
     <use href="#blade" transform="rotate(45)"/>
     <use href="#blade" transform="rotate(90)"/>
@@ -108,9 +94,9 @@
     <use href="#blade" transform="rotate(270)"/>
     <use href="#blade" transform="rotate(315)"/>
 
-    <!-- 8 secondary blades (between main) -->
+    <!-- 8 secondary blades -->
     <g id="blade2">
-      <path d="M0,-112 C4,-90 4,-65 0,-40 C-4,-65 -4,-90 0,-112" fill="url(#bladeGrad2)" opacity="0.5"/>
+      <path d="M0,-112 C4,-90 4,-65 0,-40 C-4,-65 -4,-90 0,-112" fill="url(#bladeGrad2)"/>
     </g>
     <use href="#blade2" transform="rotate(22.5)"/>
     <use href="#blade2" transform="rotate(67.5)"/>
@@ -121,13 +107,12 @@
     <use href="#blade2" transform="rotate(292.5)"/>
     <use href="#blade2" transform="rotate(337.5)"/>
 
-    <!-- Inner ring -->
-    <circle cx="0" cy="0" r="80" fill="none" stroke="url(#goldGrad)" stroke-width="2.5"/>
+    <circle cx="0" cy="0" r="80" fill="none" stroke="url(#goldGrad2)" stroke-width="2"/>
 
     <!-- Dot ring -->
     <g id="dotRing">
-      <circle cx="0" cy="-70" r="3" fill="#F5C542"/>
-      <circle cx="0" cy="-60" r="2" fill="#E8A817" opacity="0.6"/>
+      <circle cx="0" cy="-70" r="2.5" fill="#D4A017"/>
+      <circle cx="0" cy="-60" r="1.5" fill="#C4900A" opacity="0.5"/>
     </g>
     <use href="#dotRing" transform="rotate(30)"/>
     <use href="#dotRing" transform="rotate(60)"/>
@@ -141,23 +126,22 @@
     <use href="#dotRing" transform="rotate(300)"/>
     <use href="#dotRing" transform="rotate(330)"/>
 
-    <!-- Inner decorative ring -->
-    <circle cx="0" cy="0" r="50" fill="none" stroke="#E8A817" stroke-width="1.5" opacity="0.5"/>
+    <circle cx="0" cy="0" r="50" fill="none" stroke="#C4900A" stroke-width="1" opacity="0.35"/>
   </g>
 
   <!-- ========== CENTER OM ========== -->
   <g transform="translate(256,252)">
-    <circle cx="0" cy="0" r="38" fill="url(#coreGlow)" opacity="0.95"/>
-    <circle cx="0" cy="0" r="30" fill="#0F1B33"/>
-    <text x="0" y="12" text-anchor="middle" font-family="serif" font-size="38"
-          fill="url(#goldGrad)" font-weight="bold" filter="url(#glow)">ॐ</text>
+    <circle cx="0" cy="0" r="36" fill="url(#coreGrad)"/>
+    <circle cx="0" cy="0" r="28" fill="#FAFBFC" stroke="#D4A017" stroke-width="1"/>
+    <text x="0" y="12" text-anchor="middle" font-family="serif" font-size="36"
+          fill="#B8860B" font-weight="bold">ॐ</text>
   </g>
 
   <!-- ========== 13 RULE STARS ========== -->
   <g transform="translate(256,252)">
     <g id="ruleStar">
       <polygon points="0,-148 3,-141 10,-141 5,-136 7,-129 0,-133 -7,-129 -5,-136 -10,-141 -3,-141"
-               fill="#F5C542" opacity="0.7"/>
+               fill="#D4A017" opacity="0.55"/>
     </g>
     <use href="#ruleStar" transform="rotate(27.69)"/>
     <use href="#ruleStar" transform="rotate(55.38)"/>
@@ -173,18 +157,9 @@
     <use href="#ruleStar" transform="rotate(332.31)"/>
   </g>
 
-  <!-- ========== PROTECTION ARCS ========== -->
-  <g transform="translate(256,252)" opacity="0.15">
-    <path d="M-160,-80 Q-200,0 -160,80" fill="none" stroke="#F5C542" stroke-width="2"/>
-    <path d="M160,-80 Q200,0 160,80" fill="none" stroke="#F5C542" stroke-width="2"/>
-  </g>
-
   <!-- ========== TITLE ========== -->
-  <!-- RTA-GUARD text -->
   <text x="256" y="508" text-anchor="middle" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif"
-        font-size="36" font-weight="700" fill="url(#textGrad)" letter-spacing="8"
-        filter="url(#glow)">RTA-GUARD</text>
-  <!-- Subtitle -->
+        font-size="36" font-weight="700" fill="#8B6914" letter-spacing="8">RTA-GUARD</text>
   <text x="256" y="532" text-anchor="middle" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif"
-        font-size="10" fill="#E8A817" opacity="0.65" letter-spacing="4" font-weight="500">COSMIC ORDER  ·  AI GOVERNANCE  ·  ENTERPRISE SECURITY</text>
+        font-size="10" fill="#A0892C" opacity="0.7" letter-spacing="4" font-weight="500">COSMIC ORDER  ·  AI GOVERNANCE  ·  ENTERPRISE SECURITY</text>
 </svg>
