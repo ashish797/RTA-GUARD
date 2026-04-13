@@ -42,7 +42,7 @@ full = [
 ]
 langchain = [
     "langchain>=0.1",
-    "langchain-core>=0.1",
+    "langchain-core>=1.2.28",
 ]
 llamaindex = [
     "llama-index-core>=0.10",
