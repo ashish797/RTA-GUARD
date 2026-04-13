@@ -37,7 +37,7 @@ full = [
     "spacy>=3.5",
     "cryptography>=41.0",
     "numpy>=1.24",
-    "httpx>=0.25",
+    "httpx>=0.28.1",
     "qdrant-client>=1.7",
 ]
 langchain = [
