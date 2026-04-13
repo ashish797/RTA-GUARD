@@ -51,7 +51,7 @@ all = [
     "rta-guard[full,langchain,llamaindex]",
 ]
 dev = [
-    "pytest>=7.0",
+    "pytest>=9.0.3",
     "pytest-cov",
     "ruff",
 ]
