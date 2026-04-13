@@ -2,7 +2,7 @@
 # RTA-GUARD — Production Dockerfile
 # Python dashboard + Discus guard engine
 # ============================================================
-FROM python:3.11-slim AS base
+FROM python:3.14-slim AS base
 
 # Metadata
 LABEL maintainer="RTA-GUARD" \
